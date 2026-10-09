@@ -1,0 +1,18 @@
+# build output and the build environment
+.venv/
+build/
+dist/
+installer/Output/
+release/
+__pycache__/
+*.pyc
+
+# models and voices: too big for git, published as release assets (see README, "Build from source")
+models/
+voices/
+engines/
+tools/source_models/
+
+# local test books (not ours to publish) and the original planning note
+testdocs/
+SPEC.md
