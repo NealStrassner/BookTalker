@@ -2,7 +2,8 @@
 
 BookTalker reads books aloud and lights up each word on the page as it is spoken, so you can
 follow along. It is made for anyone who finds reading hard or tiring: children learning to read,
-older readers, people with low vision or dyslexia, and anyone who would rather listen.
+older readers, people with low vision or dyslexia, people learning a foreign language, and anyone
+who would rather listen.
 
 It runs entirely on your own computer. No account, no internet needed once installed, and your
 books never leave your PC. It is free.
