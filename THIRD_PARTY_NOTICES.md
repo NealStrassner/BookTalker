@@ -8,6 +8,7 @@ them with the credit their licences ask for.
 
 | Part | What it does | Licence | Source |
 |---|---|---|---|
+| NLLB-200 distilled 600M (converted to 8-bit CTranslate2) | the offline translator | **CC BY-NC 4.0 — non-commercial use only** | Meta AI, NLLB Team et al. (2022), https://huggingface.co/facebook/nllb-200-distilled-600M |
 | Surya layout model (exported to ONNX, 8-bit) | finds the text, headings and pictures on a page | Datalab's modified AI Pubs Open RAIL-M: free for research, personal use and organisations under US$5M funding/revenue (listed as CC BY-NC-SA 4.0 on Hugging Face); passed on under the same terms | Datalab, https://github.com/datalab-to/surya |
 | PaddleOCR PP-OCRv5/v6 recognition and detection models (ONNX, via RapidOCR) | reads scanned pages | Apache-2.0 | PaddlePaddle, https://github.com/PaddlePaddle/PaddleOCR ; RapidAI, https://github.com/RapidAI/RapidOCR |
 | Tesseract `tessdata_fast` trained models (16 scripts + OSD) | reads Bengali, Hebrew, Georgian and other scanned scripts | Apache-2.0 | https://github.com/tesseract-ocr/tessdata_fast |
@@ -25,7 +26,6 @@ must replace the NLLB model (and check the Surya model's terms) first.
 
 | Part | Licence | Source |
 |---|---|---|
-| NLLB-200 distilled 600M (converted to 8-bit CTranslate2) — the fast translator, fetched from BookTalker's own GitHub release | **CC BY-NC 4.0 — non-commercial use only** | Meta AI, NLLB Team et al. (2022), https://huggingface.co/facebook/nllb-200-distilled-600M |
 | Other Piper voices (the voice picker shows each voice's licence; some are public domain, some CC BY, some non-commercial or research-only) | per voice | https://huggingface.co/rhasspy/piper-voices — each voice's `MODEL_CARD` |
 | g2pW model and its lookup tables — how the Chinese voices Chaowen and Xiao Ya pronounce each character (fetched with those voices) | Apache-2.0 | Yi-Chang Chen, https://github.com/GitYCC/g2pW ; model file from the Piper project, https://huggingface.co/datasets/rhasspy/piper-checkpoints ; tables from the g2pW package, https://pypi.org/project/g2pw/ |
 | BERT Chinese word list (`vocab.txt` of bert-base-chinese, fetched with the same voices) | Apache-2.0 | Google, https://huggingface.co/google-bert/bert-base-chinese |

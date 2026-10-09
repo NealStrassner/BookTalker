@@ -20,8 +20,8 @@ AI_MODEL_URL = f"https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GG
 LLAMA_URL = "https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-win-{kind}-x64.zip"
 VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/{lang}/{loc}/{name}/{quality}/{stem}.onnx"
 AI_SIZE_MB = 2600
-# the fast translator (NLLB-200 distilled 600M, 8-bit CTranslate2; CC BY-NC 4.0): kept as a download on
-# BookTalker's own GitHub release, so readers who never translate don't carry its 623 MB
+# the fast translator (NLLB-200 distilled 600M, 8-bit CTranslate2; CC BY-NC 4.0) is built in; this copy on
+# BookTalker's GitHub release is fetched only if it's missing (and serves anyone building from source)
 REPO = "NealStrassner/BookTalker"
 TRANSLATOR_DIR = "nllb-600m-int8"
 TRANSLATOR_URL = f"https://github.com/{REPO}/releases/download/models-1/nllb-200-distilled-600M-int8.zip"

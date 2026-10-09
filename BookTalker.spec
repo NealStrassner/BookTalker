@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Build with build.bat (runs: pyinstaller BookTalker.spec)
-# Bundled: what every user needs. Extra voices and both translators (fast 600 MB, AI 2.6 GB) download on
-# request (bt/packs.py); the fast translator's zip is an asset of the GitHub release 'models-1'.
+# Bundled: what every user needs, the fast translator included. Extra voices and the AI translator
+# (2.6 GB) download on request (bt/packs.py).
 import glob
 import os
 
@@ -9,6 +9,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 
 datas = [('models/layout.onnx', 'models'), ('models/layout.json', 'models'),   # 8-bit layout model
          ('models/ocr', 'models/ocr'),                    # OCR (Chinese/English/Japanese + Latin, Cyrillic, Korean, Greek, Arabic, Hindi, Thai, Tamil, Telugu)
+         ('models/nllb-600m-int8', 'models/nllb-600m-int8'),   # the fast translator (built in)
          ('models/tessdata', 'models/tessdata'),          # Tesseract readers: Bengali, Punjabi, Gujarati, Malayalam, Kannada, Sinhala, Burmese, Khmer, Lao, Tibetan, Georgian, Armenian, Amharic, Hebrew, Yiddish
          ('booktalker.ico', '.'),
          ('LICENSE', '.'), ('THIRD_PARTY_NOTICES.md', '.'), ('licenses', 'licenses'),   # shown under About > Credits & licences
@@ -54,11 +55,13 @@ a = Analysis(
     optimize=0,
 )
 # never loaded by BookTalker (audit 10-08, ~90 MB): OpenCV's video codec, Qt's software OpenGL and its
-# QML/Quick/virtual-keyboard/PDF/network modules with the plugins that need them
+# QML/Quick/virtual-keyboard/PDF/network modules with the plugins that need them, and the
+# translator's Hugging Face tokenizer.json (it reads sentencepiece.bpe.model)
 UNUSED = ('opencv_videoio_ffmpeg', 'opengl32sw', 'qt6quick', 'qt6qml', 'qt6virtualkeyboard', 'qt6pdf',
           'qt6network', 'qt6opengl', 'qtnetwork', 'qtvirtualkeyboardplugin', 'qpdf', 'qnetworklistmanager',
           'qschannelbackend', 'qcertonlybackend', 'qopensslbackend')
 a.binaries = [b for b in a.binaries if not os.path.basename(b[0]).lower().startswith(UNUSED)]
+a.datas = [d for d in a.datas if not d[0].replace('\\', '/').endswith('nllb-600m-int8/tokenizer.json')]
 pyz = PYZ(a.pure)
 
 exe = EXE(

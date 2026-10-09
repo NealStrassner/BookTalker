@@ -194,11 +194,13 @@ class VoicePicker(QDialog):
         col.addWidget(head)
         fast_have = packs.translator_dir() is not None
         ai_have = packs.ai_installed()
-        tr_rows = [VoiceRow(FAST, fast_have, fast_have, fast_have,
-                            tr("Fast translator — hear books in another language") + f"  ({packs.TRANSLATOR_SIZE_MB} MB)"),
-                   VoiceRow(AI, ai_have, ai_have, ai_have,
-                            tr("AI translator — best quality, needs a graphics card") + f"  ({packs.AI_SIZE_MB} MB)")]
-        tr_rows[1].setToolTip(tr("Includes the fast translator, which reads while the AI starts and on computers without a graphics card."))
+        ai_row = VoiceRow(AI, ai_have, ai_have, ai_have,
+                          tr("AI translator — best quality, needs a graphics card") + f"  ({packs.AI_SIZE_MB} MB)")
+        tr_rows = [ai_row]
+        if not fast_have:       # (built in: only offered if it's missing, e.g. a build made without it)
+            tr_rows.insert(0, VoiceRow(FAST, False, False, False,
+                                       tr("Fast translator — hear books in another language") + f"  ({packs.TRANSLATOR_SIZE_MB} MB)"))
+            ai_row.setToolTip(tr("Includes the fast translator, which reads while the AI starts and on computers without a graphics card."))
         for r in tr_rows:
             r.toggled.connect(self._update_summary)
             col.addWidget(r)
