@@ -38,8 +38,9 @@ voices and the optional **AI translator** (2.6 GB, best quality, needs a graphic
 downloaded unless you choose it, and you can add any of them later.
 
 **Updates:** About → *Check for updates* looks for a newer version here and installs it, keeping
-your books, bookmarks and voices. BookTalker only goes online when you ask it to (updates,
-voices, translators).
+your books, bookmarks and voices. BookTalker only goes online when you ask it to: to download
+something you chose (a voice, the AI translator) or to check for updates. Once downloaded,
+everything, translation included, runs offline on your own computer.
 
 ## What computer it needs
 
