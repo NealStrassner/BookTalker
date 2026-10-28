@@ -320,6 +320,7 @@ class Main(QMainWindow):
             QTimer.singleShot(3000, self.models.translator.warm_up)
         self.page = 0
         self.zoom = None            # None = fit width
+        self.spread = bool(self.settings.get("spread"))     # two pages side by side, like a book
         self.follow = True
         self.shown = None
         self.last_word = None
@@ -468,6 +469,9 @@ class Main(QMainWindow):
         b_in.clicked.connect(lambda: self._zoom(1.15))
         b_fit = self._tip(IconButton("fit", ""), "Fit page width")
         b_fit.clicked.connect(self._fit)
+        self.b_spread = self._tip(IconButton("book", "", checkable=True), "Two pages side by side, like an open book")
+        self.b_spread.setChecked(self.spread)
+        self.b_spread.clicked.connect(lambda on: self._set_spread(on))
         self.b_follow = self._tip(IconButton("follow", "", checkable=True), "Follow the voice — keep the spoken word in view")
         self.b_follow.setChecked(True)
         self.b_follow.clicked.connect(lambda on: self._set_follow(on))
@@ -484,7 +488,7 @@ class Main(QMainWindow):
         b_about = self._tip(IconButton("info", ""), "About BookTalker")
         b_about.clicked.connect(self._about)
         self.ui_lang_btn = self._ui_language_button()
-        for w in (b_out, self.zoom_lbl, b_in, b_fit, Divider(), self.b_follow, self.bm_btn, b_export, Divider(),
+        for w in (b_out, self.zoom_lbl, b_in, b_fit, self.b_spread, Divider(), self.b_follow, self.bm_btn, b_export, Divider(),
                   b_open, b_about, self.ui_lang_btn):
             row.addWidget(w)
         col.addWidget(top)
@@ -577,9 +581,9 @@ class Main(QMainWindow):
         bar.addSpacing(4)
         bar.addWidget(self.page_total)
         b_pprev = self._tip(IconButton("page_prev", "", 34, 18), "Previous page  (PgUp)")
-        b_pprev.clicked.connect(lambda: self._goto_page(self.page - 1, manual=True))
+        b_pprev.clicked.connect(lambda: self._step_page(-1))
         b_pnext = self._tip(IconButton("page_next", "", 34, 18), "Next page  (PgDn)")
-        b_pnext.clicked.connect(lambda: self._goto_page(self.page + 1, manual=True))
+        b_pnext.clicked.connect(lambda: self._step_page(1))
         bar.addSpacing(6)
         bar.addWidget(b_pprev)
         bar.addWidget(self.scrubber, 1)
@@ -696,8 +700,8 @@ class Main(QMainWindow):
         sc(["Shift+Right"], lambda: self._jump(30))
         sc(["["], lambda: self._step_speed(-1))
         sc(["]"], lambda: self._step_speed(1))
-        sc(["PgUp"], lambda: self._goto_page(self.page - 1, manual=True))
-        sc(["PgDown"], lambda: self._goto_page(self.page + 1, manual=True))
+        sc(["PgUp"], lambda: self._step_page(-1))
+        sc(["PgDown"], lambda: self._step_page(1))
         sc(["Ctrl+O"], self._open_dialog)
         sc(["Ctrl+F"], self._focus_search)
         sc(["Ctrl+-"], lambda: self._zoom(1 / 1.15))
@@ -725,12 +729,38 @@ class Main(QMainWindow):
         self.zoom = min(max(self._effective_zoom() * f, 0.3), 6.0)
         self._render(force=True)
 
+    def _spread_pages(self, page=None):
+        """The pages on screen: this one, or with two-page view the open book's spread around it
+        (page 1 alone, as a cover; then 2|3, 4|5 ...)."""
+        page = self.page if page is None else page
+        n = self.book.page_count if self.book else 1
+        if not self.spread or n < 2 or page == 0:
+            return [page]
+        left = page if page % 2 else page - 1
+        return [left, left + 1] if left + 1 < n else [left]
+
+    def _step_page(self, step):
+        """Next / previous page - or spread, in two-page view."""
+        pages = self._spread_pages()
+        self._goto_page(pages[-1] + 1 if step > 0 else pages[0] - 1, manual=True)
+
+    def _set_spread(self, on):
+        self.spread = on
+        self.b_spread.setChecked(on)
+        self.settings["spread"] = on
+        save_settings(self.settings)
+        if self.book:
+            self._render(force=True)
+
     def _effective_zoom(self):
         if self.zoom is not None or self.book is None:
             return self.zoom or 1.0
-        # fit the width, but never wider than a comfortable reading column
-        w = self.stage.scroll.width() - 2 * PageCanvas.MARGIN - 24
-        return max(0.3, min(w, 940) / self.book.doc[self.page].rect.width)
+        # fit the width, but never wider than a comfortable reading column (per page)
+        pages = self._spread_pages()
+        across = 2 if self.spread and self.book.page_count > 1 else 1   # (a cover alone keeps the spread's size)
+        w = self.stage.scroll.width() - 2 * PageCanvas.MARGIN - 24 - PageCanvas.GUTTER * (across - 1)
+        widths = sum(self.book.doc[p].rect.width for p in pages) * (across / len(pages))
+        return max(0.3, min(w, 940 * across) / widths)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -741,9 +771,10 @@ class Main(QMainWindow):
         if self.book is None:
             return
         z = self._effective_zoom()
-        if force or self.shown != (self.page, round(z, 3)):
-            self.stage.page.show_page(self.book.doc[self.page], z)
-            self.shown = (self.page, round(z, 3))
+        pages = tuple(self._spread_pages())
+        if force or self.shown != (pages, round(z, 3)):
+            self.stage.page.show_pages(self.book.doc, pages, z)
+            self.shown = (pages, round(z, 3))
         self.zoom_lbl.setText(f"{round(z * 100)}%")
         self._update_labels()
         self._update_marks()
@@ -851,7 +882,7 @@ class Main(QMainWindow):
         page, rects = self._results[self._result_i]
         self._goto_page(page, manual=True)
         self._update_marks()
-        r = self.stage.page.screen_rect(rects[0])
+        r = self.stage.page.screen_rect((page,) + tuple(rects[0]))
         self.stage.scroll.ensureVisible(int(r.center().x()), int(r.center().y()), 60, 220)
 
     def _show_search_count(self):
@@ -869,10 +900,12 @@ class Main(QMainWindow):
         self.search_count.setText(text)
 
     def _update_marks(self):
-        here = [r for p, rects in self._results for r in rects if p == self.page]
+        shown = self._spread_pages()
+        here = [(p,) + tuple(r) for p, rects in self._results for r in rects if p in shown]
         cur = ()
-        if 0 <= self._result_i < len(self._results) and self._results[self._result_i][0] == self.page:
-            cur = tuple(self._results[self._result_i][1])
+        if 0 <= self._result_i < len(self._results) and self._results[self._result_i][0] in shown:
+            p, rects = self._results[self._result_i]
+            cur = tuple((p,) + tuple(r) for r in rects)
         self.stage.page.set_marks(here, cur)
 
     def _focus_search(self):
@@ -1003,7 +1036,7 @@ class Main(QMainWindow):
         self._pending_chapter = None
         if s is not None:
             self._start_at(s.key)
-        r = self.stage.page.screen_rect((0, max(0, y - 30), 1, max(0, y - 30) + 1))
+        r = self.stage.page.screen_rect((page, 0, max(0, y - 30), 1, max(0, y - 30) + 1))
         self.stage.scroll.verticalScrollBar().setValue(int(r.top()))
 
     def _remove_recent(self, path):
@@ -1057,6 +1090,9 @@ class Main(QMainWindow):
     TURN_SETTLE = 0.4        # s after reaching the edge before the push starts to count
     TURN_HOLD = 0.25         # s the push must last (a free-spinning wheel can't turn by itself)
     TURN_FORGET = 0.9        # s without scrolling and the push starts over
+    ARRIVE_SETTLE = 0.5      # s after a turn when the wheel moves nothing (the spin that turned the page)
+    ARRIVE_PUSH = 240        # then two more notches before the new page scrolls (Neal: a gap on arrival too)
+    ARRIVE_FORGET = 1.5      # s after a turn when that's over: a fresh scroll scrolls at once
 
     def _wheel_turn(self, dy):
         """Scrolling on past the bottom (top) of a page turns to the next (previous) page, but
@@ -1064,12 +1100,21 @@ class Main(QMainWindow):
         The voice is not touched. -> True when the wheel event was used up here."""
         if not self.book or not dy:
             return False
+        now = time.time()
+        t = self._turn
+        arrived = t.get("arrived", 0.0)
+        if arrived and now - arrived < self.ARRIVE_FORGET:        # just turned: hold the new page still
+            if now - arrived < self.ARRIVE_SETTLE:
+                return True
+            if t.get("after", 0) < self.ARRIVE_PUSH:
+                t["after"] = t.get("after", 0) + abs(dy)
+                return True
+        t["arrived"] = 0.0
         bar = self.stage.scroll.verticalScrollBar()
         down = dy < 0
         at_edge = bar.value() >= bar.maximum() if down else bar.value() <= bar.minimum()
-        last = (self.page == self.book.page_count - 1) if down else self.page == 0
-        now = time.time()
-        t = self._turn
+        shown = self._spread_pages()
+        last = (shown[-1] == self.book.page_count - 1) if down else shown[0] == 0
         if not at_edge or last:
             t.update(dir=0, push=0)
             return False
@@ -1087,10 +1132,10 @@ class Main(QMainWindow):
             return True
         t.update(dir=0, push=0)
         self.stage.toast.clear()
-        self._goto_page(self.page + (1 if down else -1))
+        self._goto_page(shown[-1] + 1 if down else shown[0] - 1)
         if not down:                                              # arrive at the bottom of the page before
             QTimer.singleShot(0, lambda: bar.setValue(bar.maximum()))
-        self._turn.update(since=time.time(), last=time.time(), dir=0)
+        self._turn.update(since=time.time(), last=time.time(), dir=0, arrived=time.time(), after=0)
         return True
 
     def _user_scrolled(self):
@@ -1194,8 +1239,7 @@ class Main(QMainWindow):
         have = voices.for_language(want_lang)
         v, pref = saved.get("voice"), self.settings.get("voice_" + want_lang)
         self.voice = v if v in have else (pref if pref in have else voices.default_for(want_lang))
-        # start what this book needs now, behind the loading card
-        threading.Thread(target=self.models.get_speaker, args=(self.voice,), daemon=True).start()
+        self._warm_voice()                      # start what this book needs now, behind the loading card
         self._follow_translation()
 
     def _follow_translation(self):
@@ -1632,9 +1676,7 @@ class Main(QMainWindow):
             return
         self.voice = stem
         self.settings["voice_" + voices.installed()[stem]["lang"]] = stem
-        # start loading it now: the loading card waits for this voice
-        threading.Thread(target=self.models.get_speaker, args=(stem,), daemon=True).start()
-        self._apply_mode()
+        self._apply_mode()                      # (loads it now: the loading card waits for this voice)
 
     # ---- downloads (extra voices, AI translator) --------------------------------------------
     def _download(self, label, items, then):
@@ -1661,7 +1703,27 @@ class Main(QMainWindow):
         self.stage.toast.show_message(tr("Ready: {what}", what=self._dl_label), ms=2500)
         self._dl_then()
 
+    def _warm_voice(self):
+        """Start loading the voice the reader now wants. (MEASURED: changing the output language
+        or original/translated set the new voice but never loaded it, so 'Warming up the voice'
+        waited forever.)"""
+        stem = self.voice
+        warming = self.__dict__.setdefault("_warming", set())
+        if not stem or self.models.has_speaker(stem) or stem in warming:
+            return
+        warming.add(stem)
+
+        def work():
+            try:
+                self.models.get_speaker(stem)
+            except Exception:       # noqa: BLE001 — logged; the card says what's missing
+                log_exception(f"loading voice {stem}")
+            finally:
+                warming.discard(stem)
+        threading.Thread(target=work, daemon=True).start()
+
     def _apply_mode(self):
+        self._warm_voice()
         self._follow_translation()
         if self.player:
             self.player.set_mode(self.voice, self.translate, self.book.nllb, self.book.lang)
@@ -1788,9 +1850,9 @@ class Main(QMainWindow):
             self.book.want(key[0])
             self.player.play_from(key)
 
-    def _clicked(self, x, y):
+    def _clicked(self, page, x, y):
         if self.book:
-            s = self.book.sentence_at(self.page, x, y)
+            s = self.book.sentence_at(page, x, y)
             if s is not None:
                 self._start_at(s.key)
 
@@ -1897,11 +1959,12 @@ class Main(QMainWindow):
         if following and target != self.page:
             self.page = target
             self._render()
-        boxes = [r[1:] for r in (word.rects if word else []) if r[0] == self.page]
-        self.stage.page.set_highlight(line_bars(rects, self.page), boxes)
+        shown = self._spread_pages()
+        boxes = [tuple(r) for r in (word.rects if word else []) if r[0] in shown]
+        self.stage.page.set_highlight([(p,) + b for p in shown for b in line_bars(rects, p)], boxes)
         focus = boxes[0] if boxes else None
         if translated and sentence is not self.last_word:
-            focus = next((r[1:] for r in rects if r[0] == self.page), None)
+            focus = next((tuple(r) for r in rects if r[0] in shown), None)
         if following and focus is not None and (word or sentence) is not self.last_word:
             r = self.stage.page.screen_rect(focus)
             # keep the reading spot in the upper-middle of the view, clear of the floating bars
@@ -1927,14 +1990,21 @@ class Main(QMainWindow):
 
 
 def run(path=None):
-    if sys.platform == "win32":
+    # a development run needs its own taskbar identity (else it shows Python's icon); the installed
+    # BookTalker.exe must keep the one Windows gives it, which ties the taskbar to the exe's own
+    # icon and the Start-menu shortcut (an explicit ID showed a generic icon on a laptop)
+    if sys.platform == "win32" and not getattr(sys, "frozen", False):
         try:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("BookTalker.Reader")
         except Exception:
             pass
     app = QApplication(sys.argv)
     app.setApplicationName("BookTalker")
-    app.setWindowIcon(QIcon(resource("booktalker.ico")))
+    icon = QIcon(resource("booktalker.ico"))
+    logo = resource("art", "logo_256.png")
+    if os.path.exists(logo):
+        icon.addFile(logo)                  # (the PNG too: the window keeps its icon if the .ico won't read)
+    app.setWindowIcon(icon)
     app.setStyleSheet(T.QSS)
     w = Main(path)
     w.show()

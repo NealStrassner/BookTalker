@@ -16,3 +16,6 @@ tools/source_models/
 # local test books (not ours to publish) and the original planning note
 testdocs/
 SPEC.md
+
+# the installer dedication photo: built into the installer, never published as loose files
+installer/dedication/

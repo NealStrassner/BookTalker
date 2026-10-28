@@ -10,7 +10,7 @@ from . import theme as T
 from .i18n import tr
 from .widgets import IconButton, PillButton, soft_shadow
 
-VERSION = "1.0"
+VERSION = "1.0.1"
 AUTHOR = "Neal Strassner"
 SHORTCUTS = [("Space", "Play / pause"), ("← →", "Previous / next sentence"),
              ("Shift ← →", "Back / forward 30 s"), ("[  ]", "Slower / faster"),

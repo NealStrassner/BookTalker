@@ -3,7 +3,7 @@
 ; offers "only for me", which needs no administrator and installs into %LOCALAPPDATA%\Programs.
 
 #define AppName "BookTalker"
-#define AppVersion "1.0"
+#define AppVersion "1.0.1"
 #define AppExe "BookTalker.exe"
 
 [Setup]
@@ -25,6 +25,9 @@ Compression=lzma2/max
 SolidCompression=yes
 LZMAUseSeparateProcess=yes
 WizardStyle=modern
+WizardSizePercent=120
+; the welcome page carries the dedication (photo + one line, [Code] below)
+DisableWelcomePage=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
@@ -60,6 +63,9 @@ Name: "openwith"; Description: "Add BookTalker to ""Open with"" for books and do
 
 [Files]
 Source: "..\dist\BookTalker\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; the dedication photo, one size per display scaling (only shown, never installed; kept out of
+; the public source, so a build without it simply shows no photo)
+Source: "dedication\photo_*.bmp"; Flags: dontcopy skipifsourcedoesntexist
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
@@ -85,3 +91,62 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 
 ; The reader's settings, bookmarks, voices and downloaded packs live in %LOCALAPPDATA%\BookTalker
 ; and are kept on uninstall (installing again picks them up).
+
+[Code]
+// Welcome page: the photo of Grandpa Felix reading to his grandchildren, centred under the
+// welcome text, with the dedication beneath it.
+procedure InitializeWizard;
+var
+  Page: TNewNotebookPage;
+  Photo: TBitmapImage;
+  Line: TNewStaticText;
+  Sizes: array of Integer;
+  I, W, H, Top, Margin, Pick: Integer;
+begin
+  Page := WizardForm.WelcomePage;
+  Margin := ScaleX(24);
+  WizardForm.WizardBitmapImage.Visible := False;
+  WizardForm.WelcomeLabel1.Left := Margin;
+  WizardForm.WelcomeLabel1.Width := Page.Width - 2 * Margin;
+  WizardForm.WelcomeLabel1.Top := ScaleY(14);
+  WizardForm.WelcomeLabel1.AdjustHeight;
+  WizardForm.WelcomeLabel2.Left := Margin;
+  WizardForm.WelcomeLabel2.Width := Page.Width - 2 * Margin;
+  WizardForm.WelcomeLabel2.Top := WizardForm.WelcomeLabel1.Top + WizardForm.WelcomeLabel1.Height + ScaleY(6);
+  WizardForm.WelcomeLabel2.AdjustHeight;
+
+  Top := WizardForm.WelcomeLabel2.Top + WizardForm.WelcomeLabel2.Height + ScaleY(10);
+  H := Page.Height - Top - ScaleY(34);                 // room left for the photo and its line
+  W := H * 1735 div 1080;
+  if W > Page.Width - 2 * Margin then
+  begin
+    W := Page.Width - 2 * Margin;
+    H := W * 1080 div 1735;
+  end;
+
+  // the smallest prepared size that is at least as wide as the space (sharp at any scaling)
+  Sizes := [420, 525, 630, 840, 1050];
+  Pick := Sizes[GetArrayLength(Sizes) - 1];
+  for I := GetArrayLength(Sizes) - 1 downto 0 do
+    if Sizes[I] >= W then
+      Pick := Sizes[I];
+  try
+    ExtractTemporaryFile('photo_' + IntToStr(Pick) + '.bmp');
+  except
+    exit;                                              // (a build without the photo: no dedication)
+  end;
+
+  Photo := TBitmapImage.Create(WizardForm);
+  Photo.Parent := Page;
+  Photo.Bitmap.LoadFromFile(ExpandConstant('{tmp}\photo_' + IntToStr(Pick) + '.bmp'));
+  Photo.Stretch := True;
+  Photo.SetBounds((Page.Width - W) div 2, Top, W, H);
+
+  Line := TNewStaticText.Create(WizardForm);
+  Line.Parent := Page;
+  Line.Caption := 'Dedicated to my grandpa Felix ' + #$2014 + ' the original BookTalker';
+  Line.Font.Style := [fsItalic];
+  Line.Font.Size := WizardForm.WelcomeLabel2.Font.Size + 1;
+  Line.Top := Top + H + ScaleY(8);
+  Line.Left := (Page.Width - Line.Width) div 2;
+end;

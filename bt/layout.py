@@ -23,7 +23,7 @@ from PIL import Image
 from .paths import resource
 
 LAYOUT_DPI = 96
-CACHE_VERSION = 13      # 2: CJK split; 3: scans OCR'd; 4: broken layers re-OCR'd; 5: scans' layers checked; 6: Greek/Arabic/Thai... readers; 7: no line flipping; 8: comic panels; 9: manga, OCR junk floor; 10: reader per page, broken fonts, Korean words; 11: Tesseract readers; 12: code kept (bt/code.py); 13: exact words of converted books
+CACHE_VERSION = 14      # 2: CJK split; 3: scans OCR'd; 4: broken layers re-OCR'd; 5: scans' layers checked; 6: Greek/Arabic/Thai... readers; 7: no line flipping; 8: comic panels; 9: manga, OCR junk floor; 10: reader per page, broken fonts, Korean words; 11: Tesseract readers; 12: code kept (bt/code.py); 13: exact words of converted books; 14: second text layers dropped
 SKIP_LABELS = {"PageHeader", "PageFooter", "Picture", "Figure", "Table", "Form",
                "Equation", "ChemicalBlock", "Diagram", "TableOfContents",
                "Bibliography", "BlankPage", "Handwriting"}
@@ -272,6 +272,48 @@ def fix_indic_order(words):
             w = w[:4] + (t,) + tuple(w[5:])
         out.append(w)
     return out
+
+
+def drop_second_layer(words):
+    """A PDF can carry the same text twice in the same place: two hidden OCR layers from two
+    scanning passes (MEASURED: 'Mound Builders', every paragraph read twice), or text printed
+    twice for a bold or shadow look. A block whose words sit on the same words already read is
+    a second copy, and goes. (Same place AND same word: different text that merely overlaps,
+    a small label across a big headline, stays.)"""
+    if len(words) < 4:
+        return words
+    rows = {}                                   # 8-pt bands -> word boxes already kept
+
+    def norm(t):
+        return "".join(c for c in t.lower() if c.isalnum()) or t
+
+    def covered(w):
+        cx, cy, h = (w[0] + w[2]) / 2, (w[1] + w[3]) / 2, w[3] - w[1]
+        a = norm(w[4])
+        for k in rows.get(int(cy // 8), ()):
+            kh = k[3] - k[1]
+            if k[0] - 1 <= cx <= k[2] + 1 and k[1] - 1 <= cy <= k[3] + 1 and 0.6 * kh <= h <= 1.6 * kh:
+                b = norm(k[4])
+                if a == b or a in b or b in a:  # (a second OCR pass splits some words: 's trange')
+                    return True
+        return False
+
+    def keep(w):
+        for band in range(int(w[1] // 8), int(w[3] // 8) + 1):
+            rows.setdefault(band, []).append(w)
+
+    blocks = {}
+    for w in words:
+        blocks.setdefault(w[5], []).append(w)
+    out, dropped = [], 0
+    for bno, ws in blocks.items():              # (stream order: the first copy comes first)
+        if sum(1 for w in ws if covered(w)) >= 0.6 * len(ws):
+            dropped += len(ws)
+            continue
+        out.extend(ws)
+        for w in ws:
+            keep(w)
+    return out if dropped else words
 
 
 def drop_ruby(words):
@@ -562,7 +604,7 @@ def build_page(page, layout, words=None, comic=False, code=False):
             if any(RTL_CHAR.search(w[4]) for w in words):
                 words = rtl_words(page, words)
     if not ocr and not exact:
-        words = fix_indic_order(fix_mojibake(words))
+        words = fix_indic_order(fix_mojibake(drop_second_layer(words)))
     words = join_spaced_hangul(join_drop_caps(fix_rtl(drop_ruby(words))))
     from . import comic as comic_order
     # panels and balloons, in comic reading order: comic files, and scanned pages that read
@@ -959,7 +1001,7 @@ class LayoutWorker(threading.Thread):
             words = self._ocr_words(pg)
         elif self.get_ocr is not None and not self.code:     # (code never reads like real words)
             lang = self.get_lang() if self.get_lang else "en"
-            repaired = fix_rtl(fix_indic_order(fix_mojibake(layer)))      # judged as it will be read
+            repaired = fix_rtl(fix_indic_order(fix_mojibake(drop_second_layer(layer))))   # judged as it will be read
             q = text_quality([w[4] for w in repaired], lang)
             # A scan carrying someone else's OCR text: ours read better on the books
             # measured (0.98-1.00 real words vs 0.80-0.95), so compare and keep the better.

@@ -21,7 +21,8 @@ Made by Neal Strassner.
 - Reads scanned books with its own text recognition, in Latin, Cyrillic, Greek, Arabic, Hebrew,
   Chinese, Japanese, Korean, Hindi, Bengali, Tamil, Telugu, Thai, Georgian, Armenian and more.
 - Translates as it reads: a book in one of about 120 languages can be heard in another.
-- Chapters, search, bookmarks with notes, a sleep timer (minutes or "end of this chapter"),
+- One page at a time or two side by side like an open book; chapters, search, bookmarks with
+  notes, a sleep timer (minutes or "end of this chapter"),
   reading speed, and **Save as audiobook**: one MP3 per chapter in a folder named after the book.
 - Computer code in a book can be explained in plain words or read out exactly.
 

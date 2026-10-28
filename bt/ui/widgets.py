@@ -277,36 +277,41 @@ def _shadow_image(w, h, blur=22, spread=6):
 
 
 class PageCanvas(QWidget):
-    """One PDF page floating on the dark canvas, with the read-along highlight."""
-    clicked = Signal(float, float)
+    """One PDF page - or two side by side, like an open book - floating on the dark canvas, with
+    the read-along highlight. Every box carries its page: (page, x0, y0, x1, y1) in PDF points."""
+    clicked = Signal(int, float, float)                 # page, x, y (PDF points)
     MARGIN = 40
+    GUTTER = 6          # between the two pages of a spread
     BOTTOM = 140        # room to scroll the last lines above the floating transport bar
 
     def __init__(self):
         super().__init__()
-        self.img = None
-        self.shadow = None
+        self.sheets = []                                # [(page, image, left edge, width, height)]
+        self.shadows = {}
         self.zoom = 1.0
         self.sentence_bars, self.word_boxes = [], []
-        self.marks, self.current_mark = [], ()          # search matches on this page; the current one
+        self.marks, self.current_mark = [], ()          # search matches on these pages; the current one
         self.setCursor(Qt.IBeamCursor)
 
-    def show_page(self, page, zoom):
+    def show_pages(self, doc, pages, zoom):
         dpr = self.devicePixelRatioF()
-        pm = page.get_pixmap(matrix=pymupdf.Matrix(zoom * dpr, zoom * dpr), alpha=False)
-        img = QImage(pm.samples, pm.width, pm.height, pm.stride, QImage.Format_RGB888).copy()
-        img.setDevicePixelRatio(dpr)
-        self.img, self.zoom = img, zoom
-        w, h = round(pm.width / dpr), round(pm.height / dpr)
-        if self.shadow is None or self.shadow[2] != (w, h):
-            qi, pad = _shadow_image(w, h)
-            self.shadow = (qi, pad, (w, h))
-        self.setFixedSize(w + 2 * self.MARGIN, h + self.MARGIN + self.BOTTOM)
+        sheets, x, tallest = [], self.MARGIN, 0
+        for n in pages:
+            pm = doc[n].get_pixmap(matrix=pymupdf.Matrix(zoom * dpr, zoom * dpr), alpha=False)
+            img = QImage(pm.samples, pm.width, pm.height, pm.stride, QImage.Format_RGB888).copy()
+            img.setDevicePixelRatio(dpr)
+            w, h = round(pm.width / dpr), round(pm.height / dpr)
+            if (w, h) not in self.shadows:
+                self.shadows[(w, h)] = _shadow_image(w, h)
+            sheets.append((n, img, x, w, h))
+            x += w + self.GUTTER
+            tallest = max(tallest, h)
+        self.sheets, self.zoom = sheets, zoom
+        self.setFixedSize(x - self.GUTTER + self.MARGIN, tallest + self.MARGIN + self.BOTTOM)
         self.update()
 
-    def page_rect(self):
-        w, h = self.shadow[2]
-        return QRectF(self.MARGIN, self.MARGIN, w, h)
+    def pages(self):
+        return [s[0] for s in self.sheets]
 
     def set_highlight(self, sentence_bars, word_boxes):
         if (sentence_bars, word_boxes) != (self.sentence_bars, self.word_boxes):
@@ -318,32 +323,42 @@ class PageCanvas(QWidget):
             self.marks, self.current_mark = marks, current
             self.update()
 
+    def _sheet(self, page):
+        return next((s for s in self.sheets if s[0] == page), self.sheets[0] if self.sheets else None)
+
     def screen_rect(self, r, pad=1.5):
-        x0, y0, x1, y1 = r
-        z, m = self.zoom, self.MARGIN
-        return QRectF(m + (x0 - pad) * z, m + (y0 - pad) * z, (x1 - x0 + 2 * pad) * z, (y1 - y0 + 2 * pad) * z)
+        page, x0, y0, x1, y1 = r
+        sheet = self._sheet(page)
+        left = sheet[2] if sheet else self.MARGIN
+        z = self.zoom
+        return QRectF(left + (x0 - pad) * z, self.MARGIN + (y0 - pad) * z,
+                      (x1 - x0 + 2 * pad) * z, (y1 - y0 + 2 * pad) * z)
 
     def paintEvent(self, _e):
-        if self.img is None:
+        if not self.sheets:
             return
         p = QPainter(self)
         p.setRenderHint(QPainter.SmoothPixmapTransform)
-        qi, pad, _ = self.shadow
-        p.drawImage(QPointF(self.MARGIN - pad, self.MARGIN - pad), qi)
-        pr = self.page_rect()
-        p.drawImage(pr.topLeft(), self.img)
+        for _n, img, left, w, h in self.sheets:
+            qi, pad = self.shadows[(w, h)]
+            p.drawImage(QPointF(left - pad, self.MARGIN - pad), qi)
+            p.drawImage(QPointF(left, self.MARGIN), img)
         p.setRenderHint(QPainter.Antialiasing)
         p.setCompositionMode(QPainter.CompositionMode_Multiply)   # highlighter: print stays dark
         p.setPen(Qt.NoPen)
         p.setBrush(T.SENTENCE_WASH)
         for r in self.sentence_bars:
             p.drawRoundedRect(self.screen_rect(r, 2.5), 3, 3)
-        dpr = self.img.devicePixelRatio()
         for r in self.word_boxes:
+            sheet = self._sheet(r[0])
+            if sheet is None:
+                continue
+            img, left = sheet[1], sheet[2]
+            dpr = img.devicePixelRatio()
             box = self.screen_rect(r, 2)
-            src = box.translated(-self.MARGIN, -self.MARGIN)
+            src = box.translated(-left, -self.MARGIN)
             p.setCompositionMode(QPainter.CompositionMode_SourceOver)
-            p.drawImage(box, self.img, QRectF(src.x() * dpr, src.y() * dpr, src.width() * dpr, src.height() * dpr))
+            p.drawImage(box, img, QRectF(src.x() * dpr, src.y() * dpr, src.width() * dpr, src.height() * dpr))
             p.setCompositionMode(QPainter.CompositionMode_Multiply)
             p.setBrush(T.WORD_MARK)
             p.drawRoundedRect(box, 3, 3)
@@ -359,9 +374,11 @@ class PageCanvas(QWidget):
         p.end()
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton and self.img is not None:
+        if e.button() == Qt.LeftButton and self.sheets:
             pos = e.position()
-            self.clicked.emit((pos.x() - self.MARGIN) / self.zoom, (pos.y() - self.MARGIN) / self.zoom)
+            sheet = next((s for s in self.sheets if s[2] <= pos.x() <= s[2] + s[3]), None)
+            if sheet is not None:
+                self.clicked.emit(sheet[0], (pos.x() - sheet[2]) / self.zoom, (pos.y() - self.MARGIN) / self.zoom)
 
 
 class Canvas(QWidget):

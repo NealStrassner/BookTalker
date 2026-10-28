@@ -180,6 +180,8 @@ def build_paragraphs(pages, layout):
 
 
 URL = re.compile(r"^[(\[<\"']*(https?://|www\.|ftp://)\S+", re.I)
+# an initial or a dotted capital abbreviation, read as letters: 'W.'  'U.S.'  'J.R.R.'
+INITIALS = re.compile(r"^(?:[A-Z]\.){1,4}$")
 # NFKC splits Thai/Lao sara am (ำ ຳ) into nikhahit + aa: put it back together
 SARA_AM = re.compile("[\u0e4d\u0ecd]([\u0e48-\u0e4b\u0ec8-\u0ecb]?)([\u0e32\u0eb2])")
 
@@ -354,6 +356,11 @@ def _spoken(pairs):
             s = SAY[low]
         elif low in SAY_BEFORE_NUMBER and nxt[:1].isdigit():
             s = SAY_BEFORE_NUMBER[low]
+        elif nxt and INITIALS.match(t):
+            # 'W. D. Gann': the voice ends a sentence at each full stop, and a one-letter
+            # sentence comes out garbled (MEASURED: Ryan said 'W. Then dance'; 'W D Gann' is
+            # read right by every voice)
+            s = " ".join(c for c in t if c.isalpha())
         else:
             s = re.sub(r"^([A-Za-z]{2,}[.,;:!?][\"”’']?)\d{1,3}$", r"\1", t)   # "cost.1" footnote mark
             s = s.replace("—", ", ").replace("–", "-" if re.search(r"\d–\d", s) else ", ")
