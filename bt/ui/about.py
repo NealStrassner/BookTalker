@@ -10,7 +10,7 @@ from . import theme as T
 from .i18n import tr
 from .widgets import IconButton, PillButton, soft_shadow
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 AUTHOR = "Neal Strassner"
 SHORTCUTS = [("Space", "Play / pause"), ("← →", "Previous / next sentence"),
              ("Shift ← →", "Back / forward 30 s"), ("[  ]", "Slower / faster"),
@@ -109,9 +109,9 @@ class LicenceDialog(QDialog):
 
 
 class _UpdateSignals(QObject):
-    checked = Signal(object, str)       # (version, url, bytes) or None, error
+    checked = Signal(object, str)       # update.latest() plus "plan", or None; error
     progress = Signal(float)
-    fetched = Signal(str, str)          # error, installer path
+    fetched = Signal(str, str)          # error, installer path ("" for a file-by-file update)
 
 
 class AboutDialog(QDialog):
@@ -232,25 +232,51 @@ class AboutDialog(QDialog):
     def _update_clicked(self):
         import threading
         from .. import update
-        if getattr(self, "_offer", None):             # 'Install version X': fetch it, then run it
-            version, url, size = self._offer
-            path = update.installer_path(version)
-            self.update_btn.setEnabled(False)
+        offer = getattr(self, "_offer", None)
+        self.update_btn.setEnabled(False)
+        if offer and offer["plan"]:                   # only the files that differ, then copied in
+            z, changed, gone = offer["plan"]
+
+            def fetch():
+                try:
+                    update.fetch(z, changed, self._sig.progress.emit)
+                    if not update.install(offer["version"], update.program_dir(), gone):
+                        raise RuntimeError(tr("Update cancelled."))
+                    self._sig.fetched.emit("", "")
+                except Exception as e:  # noqa: BLE001 — shown to the reader
+                    self._sig.fetched.emit(str(e) or e.__class__.__name__, "")
+            threading.Thread(target=fetch, daemon=True).start()
+            return
+        if offer:                                     # no file list (or a development copy): the installer
+            url, size = offer["installer"]
+            path = update.installer_path(offer["version"])
             from .. import packs
 
             def progress(done, total):
                 if total:
                     self._sig.progress.emit(done / total)
-            self._dl = packs.Download([(url, path, False)], progress,
-                                      lambda err: self._sig.fetched.emit(err or "", path))
+
+            def done(err):
+                if not err:
+                    try:
+                        update.run_installer(path)    # (off the window's thread: antivirus may scan it first)
+                    except OSError as e:
+                        err = str(e)
+                self._sig.fetched.emit(err or "", path)
+            self._dl = packs.Download([(url, path, False)], progress, done)
             self._dl.start()
             return
-        self.update_btn.setEnabled(False)
         self.update_btn.setText(tr("Checking…"))
 
         def work():
             try:
-                self._sig.checked.emit(update.latest(), "")
+                found = update.latest()
+                if found and update.is_newer(found["version"], VERSION):
+                    folder = update.program_dir()
+                    found["plan"] = update.plan(found["files"], folder) if folder and found["files"] else None
+                    if not found["plan"] and not found["installer"]:
+                        found = None
+                self._sig.checked.emit(found, "")
             except Exception as e:      # noqa: BLE001 — shown to the reader
                 self._sig.checked.emit(None, str(e) or e.__class__.__name__)
         threading.Thread(target=work, daemon=True).start()
@@ -261,28 +287,28 @@ class AboutDialog(QDialog):
         self.update_btn.setText(tr("Check for updates"))
         if err:
             self._note(tr("Couldn't check for updates: {err}", err=err))
-        elif not found or not update.is_newer(found[0], VERSION):
+        elif not found or not update.is_newer(found["version"], VERSION):
             self._note(tr("BookTalker is up to date (version {v}).", v=VERSION))
         else:
             self._offer = found
-            mb = round(found[2] / 1e6) if found[2] else 0
-            self.update_btn.setText(tr("Install version {v}", v=found[0]) + (f"  ({mb} MB)" if mb else ""))
-            self._note(tr("Version {v} is available. Your books, bookmarks and voices stay as they are.", v=found[0]))
+            size = (sum(i.compress_size for i in found["plan"][1]) if found["plan"] else found["installer"][1])
+            mb = max(1, round(size / 1e6)) if size else 0
+            self.update_btn.setText(tr("Install version {v}", v=found["version"]) + (f"  ({mb} MB)" if mb else ""))
+            self._note(tr("Version {v} is available. Your books, bookmarks and voices stay as they are.", v=found["version"]))
 
     def _progress(self, fraction):
         self.update_btn.setText(tr("Downloading the update — {pct}%", pct=round(100 * fraction)))
 
     def _fetched(self, err, path):
-        from .. import update
         if err:
             self.update_btn.setEnabled(True)
             self.update_btn.setText(tr("Check for updates"))
             self._offer = None
             self._note(tr("Update failed: {err}", err=err))
             return
-        update.run_installer(path)
         from PySide6.QtWidgets import QApplication
-        QApplication.quit()                           # (the installer replaces the program's files)
+        QApplication.closeAllWindows()                # (the update replaces the program's files,
+        QApplication.quit()                           #  then starts BookTalker again)
 
     def keyPressEvent(self, e):
         if e.key() == Qt.Key_Escape:

@@ -2008,4 +2008,11 @@ def run(path=None):
     app.setStyleSheet(T.QSS)
     w = Main(path)
     w.show()
+    from . import update
+    from .ui.about import VERSION
+    after = update.finished(VERSION)
+    if after:
+        state, version = after
+        w.stage.toast.show_message(tr("BookTalker was updated to version {v}." if state == "done" else
+                                      "The update to version {v} did not finish. Try again from About.", v=version), ms=6000)
     return app.exec()

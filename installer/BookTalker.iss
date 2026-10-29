@@ -3,7 +3,7 @@
 ; offers "only for me", which needs no administrator and installs into %LOCALAPPDATA%\Programs.
 
 #define AppName "BookTalker"
-#define AppVersion "1.0.1"
+#define AppVersion "1.0.2"
 #define AppExe "BookTalker.exe"
 
 [Setup]
@@ -88,6 +88,11 @@ Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; Val
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; files that came later through About -> Check for updates (the uninstaller only knows its own)
+Type: filesandordirs; Name: "{app}\_internal"
+Type: files; Name: "{app}\{#AppExe}"
 
 ; The reader's settings, bookmarks, voices and downloaded packs live in %LOCALAPPDATA%\BookTalker
 ; and are kept on uninstall (installing again picks them up).
