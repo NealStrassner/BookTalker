@@ -5,12 +5,13 @@ from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QDialog, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from ..packs import REPO
 from ..paths import resource
 from . import theme as T
 from .i18n import tr
 from .widgets import IconButton, PillButton, soft_shadow
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 AUTHOR = "Neal Strassner"
 SHORTCUTS = [("Space", "Play / pause"), ("← →", "Previous / next sentence"),
              ("Shift ← →", "Back / forward 30 s"), ("[  ]", "Slower / faster"),
@@ -160,9 +161,18 @@ class AboutDialog(QDialog):
         by = QLabel(tr("Made by {name}  ·  Free for everyone", name=AUTHOR))
         by.setFont(T.font(13, QFont.DemiBold))
         by.setStyleSheet(f"color: {T.GOLD};")
+        repo = f"https://github.com/{REPO}"
+        link = f"color: {T.TEXT}; text-decoration: underline;"
+        web = QLabel(f"<a href='{repo}/releases' style='{link}'>{tr('What’s new')}</a>"
+                     f"  ·  <a href='{repo}' style='{link}'>github.com/{REPO}</a>")
+        web.setTextFormat(Qt.RichText)
+        web.setOpenExternalLinks(True)
+        web.setFont(T.font(12))
+        web.setStyleSheet(f"color: {T.TEXT_2};")
         names.addWidget(n)
         names.addWidget(v)
         names.addWidget(by)
+        names.addWidget(web)
         head.addLayout(names)
         head.addStretch()
         lay.addLayout(head)

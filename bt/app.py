@@ -376,6 +376,7 @@ class Main(QMainWindow):
         titles.setSpacing(1)
         titles.setContentsMargins(0, 12, 0, 12)
         self.title_lbl = QLabel("")
+        self.title_lbl.setTextFormat(Qt.RichText)   # (always: an escaped "Cayce's" has no tags to tell Qt)
         self.title_lbl.setFont(T.font(15, QFont.DemiBold))
         self.sub_lbl = QLabel("")
         self.sub_lbl.setFont(T.font(12))

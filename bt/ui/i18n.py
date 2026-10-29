@@ -597,6 +597,8 @@ T = {
 "Update failed: {err}": dict(es="La actualización falló: {err}", fr="Échec de la mise à jour : {err}",
     de="Update fehlgeschlagen: {err}", it="Aggiornamento non riuscito: {err}", pt="A atualização falhou: {err}",
     ru="Не удалось обновить: {err}", zh="更新失败：{err}"),
+"What’s new": dict(es="Novedades", fr="Nouveautés", de="Neuigkeiten", it="Novità", pt="Novidades",
+    ru="Что нового", zh="新功能"),
 "Version {v} is available. Click here to update.": dict(es="La versión {v} está disponible. Haz clic aquí para actualizar.",
     fr="La version {v} est disponible. Cliquez ici pour mettre à jour.", de="Version {v} ist verfügbar. Hier klicken zum Aktualisieren.",
     it="È disponibile la versione {v}. Fai clic qui per aggiornare.", pt="A versão {v} está disponível. Clique aqui para atualizar.",

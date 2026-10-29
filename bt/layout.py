@@ -23,7 +23,7 @@ from PIL import Image
 from .paths import resource
 
 LAYOUT_DPI = 96
-CACHE_VERSION = 14      # 2: CJK split; 3: scans OCR'd; 4: broken layers re-OCR'd; 5: scans' layers checked; 6: Greek/Arabic/Thai... readers; 7: no line flipping; 8: comic panels; 9: manga, OCR junk floor; 10: reader per page, broken fonts, Korean words; 11: Tesseract readers; 12: code kept (bt/code.py); 13: exact words of converted books; 14: second text layers dropped
+CACHE_VERSION = 15      # 2: CJK split; 3: scans OCR'd; 4: broken layers re-OCR'd; 5: scans' layers checked; 6: Greek/Arabic/Thai... readers; 7: no line flipping; 8: comic panels; 9: manga, OCR junk floor; 10: reader per page, broken fonts, Korean words; 11: Tesseract readers; 12: code kept (bt/code.py); 13: exact words of converted books; 14: second text layers dropped; 15: ... even with dot leaders
 SKIP_LABELS = {"PageHeader", "PageFooter", "Picture", "Figure", "Table", "Form",
                "Equation", "ChemicalBlock", "Diagram", "TableOfContents",
                "Bibliography", "BlankPage", "Handwriting"}
@@ -310,6 +310,15 @@ def drop_second_layer(words):
         if sum(1 for w in ws if covered(w)) >= 0.6 * len(ws):
             dropped += len(ws)
             continue
+        # a contents page's dot leaders ('. . . .'), printed in one copy only, made a second copy
+        # look new (MEASURED: 'Mound Builders'): without them it is a copy, and only its whole
+        # words that are not already there stay (not the copy's broken bits: 'H i st o ry')
+        real = [w for w in ws if w[4].strip(".…·")]
+        if real and len(real) < len(ws) and sum(1 for w in real if covered(w)) >= 0.6 * len(real):
+            new = [w for w in real if not covered(w) and (sum(c.isalnum() for c in w[4]) >= 3
+                                                           or any(c.isdigit() for c in w[4]))]
+            dropped += len(ws) - len(new)
+            ws = new
         out.extend(ws)
         for w in ws:
             keep(w)

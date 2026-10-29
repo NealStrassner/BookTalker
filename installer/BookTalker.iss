@@ -3,7 +3,7 @@
 ; offers "only for me", which needs no administrator and installs into %LOCALAPPDATA%\Programs.
 
 #define AppName "BookTalker"
-#define AppVersion "1.0.3"
+#define AppVersion "1.0.4"
 #define AppExe "BookTalker.exe"
 
 [Setup]
@@ -94,8 +94,8 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 Type: filesandordirs; Name: "{app}\_internal"
 Type: files; Name: "{app}\{#AppExe}"
 
-; The reader's settings, bookmarks, voices and downloaded packs live in %LOCALAPPDATA%\BookTalker
-; and are kept on uninstall (installing again picks them up).
+; The reader's settings, bookmarks, voices, downloaded packs and prepared books live in
+; %LOCALAPPDATA%\BookTalker; the uninstaller asks whether to remove them too ([Code] below).
 
 [Code]
 // Welcome page: the photo of Grandpa Felix reading to his grandchildren, centred under the
@@ -154,4 +154,21 @@ begin
   Line.Font.Size := WizardForm.WelcomeLabel2.Font.Size + 1;
   Line.Top := Top + H + ScaleY(8);
   Line.Left := (Page.Width - Line.Width) div 2;
+end;
+
+// Uninstalling: the program goes; the reader's own BookTalker folder only when they say so
+// (a silent uninstall keeps it).
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Data: String;
+begin
+  if CurUninstallStep <> usPostUninstall then
+    exit;
+  Data := ExpandConstant('{localappdata}\BookTalker');
+  if UninstallSilent or not DirExists(Data) then
+    exit;
+  if MsgBox('Also remove your BookTalker voices, translators, bookmarks, settings and prepared books?' + #13#10#13#10 +
+            'Choose No to keep them for a later install. (Audiobooks you saved stay where you saved them.)',
+            mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+    DelTree(Data, True, True, True);
 end;

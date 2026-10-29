@@ -34,6 +34,10 @@ Made by Neal Strassner.
 3. Windows may show "Windows protected your PC" (the installer is not code-signed): choose
    **More info → Run anyway**.
 
+Voices, the AI translator, bookmarks, settings and prepared books are kept in your own user folder
+(`%LOCALAPPDATA%\BookTalker`), so Windows' list of programs counts only the program itself.
+Uninstalling asks whether to remove them too.
+
 BookTalker comes with one English voice and its fast translator. On first start it offers more
 voices and the optional **AI translator** (2.6 GB, best quality, needs a graphics card). Nothing is
 downloaded unless you choose it, and you can add any of them later.

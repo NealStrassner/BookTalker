@@ -113,6 +113,7 @@ def _unquote(t):
 def nice_title(text, lang="en"):
     t = " ".join(text.split()).strip(" .·•-–—:")
     t = re.sub(r"[\s.·…_]{3,}\s*\d+\s*$", "", t)          # leader dots + page number
+    t = re.sub(r"(?<=[^\W\d_] )8<(?= [^\W\d_])", "&", t)   # a scan's '&' ('Notes 8< References')
     t = fix_spacing(t, lang)
     t = _title_case(t)
     t = _unquote(t)
@@ -292,15 +293,30 @@ def from_contents(pages, labels, page_count, lang="en"):
         if sum(1 for a, b in zip(nums, nums[1:]) if b >= a) < 0.7 * (len(nums) - 1):
             return []                                        # not a contents list after all
     last_contents = max(cpages)
-    # where each title turns up as a heading after the contents, in order
+    # printed page -> PDF page from page labels or the numbers printed on pages
+    seen = Counter()
+    for i, lab in labels.items():
+        if lab.isdigit():
+            seen[i - int(lab)] += 1
+    if not seen:
+        for p, n in _printed_numbers(pages).items():
+            seen[p - n] += 1
+    base = seen.most_common(1)[0][0] if seen and seen.most_common(1)[0][1] >= max(3, sum(seen.values()) / 2) else None
+    # where each title turns up as a heading after the contents, in order (and, when the page
+    # numbers are clear, near its printed page: a scan-garbled heading must not send a chapter
+    # to a later heading that merely starts the same way - MEASURED: 'Mound Builders' ch. 3)
     title_pages, last = {}, (last_contents, 1e9)
     for k, (title, printed, _x) in enumerate(entries):
         key = _title_key(title)
         if len(key) < 4:
             continue
+        before = [e[1] for e in entries[:k] if e[1] and e[1] > 0]
+        after = [e[1] for e in entries[k + 1:] if e[1] and e[1] > 0]
+        fits = printed and printed > 0 and (not before or printed >= before[-1]) and (not after or printed <= after[0])
+        near = printed + base if base is not None and fits else None    # ('41' misread as '4r': not trusted)
         for p in range(last[0], page_count):
             d = pages.get(p)
-            if not d:
+            if not d or (near is not None and abs(p - near) > 3):
                 continue
             top = [(ly, _norm(t)) for ly, _lx, t, _ in _lines(d, include_extra=False)[:5]]
             # each chapter starts after the one before it (not inside the previous heading)
@@ -316,13 +332,7 @@ def from_contents(pages, labels, page_count, lang="en"):
                 last = (p, end + 1)
                 break
     # printed page -> PDF page: page labels, the numbers printed on pages, or matched titles
-    offsets = Counter()
-    for i, lab in labels.items():
-        if lab.isdigit():
-            offsets[i - int(lab)] += 1
-    if not offsets:
-        for p, n in _printed_numbers(pages).items():
-            offsets[p - n] += 1
+    offsets = Counter(seen)
     for k, (p, _y) in title_pages.items():
         if entries[k][1] and entries[k][1] > 0:
             offsets[p - entries[k][1]] += 2
