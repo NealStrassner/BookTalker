@@ -35,7 +35,7 @@ Made by Neal Strassner.
    **More info → Run anyway**.
 
 Voices, the AI translator, bookmarks, settings and prepared books are kept in your own user folder
-(`%LOCALAPPDATA%\BookTalker`), so Windows' list of programs counts only the program itself.
+(`%LOCALAPPDATA%\BookTalker`). Windows' list of programs shows them together with the program.
 Uninstalling asks whether to remove them too.
 
 BookTalker comes with one English voice and its fast translator. On first start it offers more

@@ -172,7 +172,7 @@ def _fetched(z):
 
 
 def _uninstall_entry():
-    """Where Windows lists this installation (for its version number), as reg.exe names it."""
+    """Where Windows lists this installation (its name and version number), as reg.exe names it."""
     import winreg
     for hive, name in ((winreg.HKEY_LOCAL_MACHINE, "HKLM"), (winreg.HKEY_CURRENT_USER, "HKCU")):
         try:
@@ -206,16 +206,56 @@ def install(version, folder, gone):
         json.dump({"version": version}, f)
     exe = os.path.join(folder, "BookTalker.exe")
     entry = _uninstall_entry()
+    kb = min(listing_kb(), 0xFFFFFFFF)
     # robocopy retries a file still in use once a second while BookTalker closes; exit codes of 8
     # and up mean a file could not be copied (then the old version starts and says so)
     line = (f'ping -n 3 127.0.0.1 >nul & '
             f'robocopy "{files}" "{folder}" /E /IS /IT /R:60 /W:1 /NP /NJH /NJS >nul & '
-            + (f'(if not errorlevel 8 reg add "{entry}" /v DisplayVersion /d {version} /f /reg:64 >nul) & ' if entry else "")
+            + (f'(if not errorlevel 8 (reg add "{entry}" /v DisplayVersion /d {version} /f /reg:64 >nul'
+               f' & reg add "{entry}" /v DisplayName /d BookTalker /f /reg:64 >nul'
+               f' & reg add "{entry}" /v EstimatedSize /t REG_DWORD /d {kb} /f /reg:64 >nul)) & ' if entry else "")
             + f'(for /f "usebackq delims=" %f in ("{work_dir("remove.txt")}") do @del /f /q "{folder}\\%f" 2>nul) & '
             f'start "" explorer.exe "{exe}"')
     verb = "open" if _writable(folder) else "runas"
     ctypes.windll.ole32.CoInitializeEx(None, 0x2 | 0x4)    # (ShellExecute from a background thread)
     return ctypes.windll.shell32.ShellExecuteW(None, verb, "cmd.exe", f"/c {line}", None, 0) > 32
+
+
+def _folder_bytes(folder):
+    total = 0
+    for root, _, names in os.walk(folder):
+        for n in names:
+            try:
+                total += os.path.getsize(os.path.join(root, n))
+            except OSError:
+                pass
+    return total
+
+
+def listing_kb(program_bytes=None):
+    """What BookTalker takes on disk, as Windows' list of programs counts it (KB): the program
+    plus everything it downloaded and prepared (voices, translators, books) in the reader's folder."""
+    if program_bytes is None:
+        program_bytes = _folder_bytes(program_dir())
+    return (program_bytes + _folder_bytes(os.path.normpath(work_dir(os.pardir)))) // 1024
+
+
+def fix_listing():
+    """Keep Windows' list of programs right: the name plain 'BookTalker' (installers before 1.0.5
+    added the version they installed, which updates left behind) and the size of the program
+    together with its downloads. An install for everyone needs administrator rights for this, so
+    there the update's copier does it."""
+    import winreg
+    if not program_dir():
+        return
+    for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(hive, UNINSTALL_KEY, 0, winreg.KEY_READ | winreg.KEY_SET_VALUE | winreg.KEY_WOW64_64KEY) as k:
+                if winreg.QueryValueEx(k, "DisplayName")[0] != "BookTalker":
+                    winreg.SetValueEx(k, "DisplayName", 0, winreg.REG_SZ, "BookTalker")
+                winreg.SetValueEx(k, "EstimatedSize", 0, winreg.REG_DWORD, min(listing_kb(), 0xFFFFFFFF))
+        except OSError:
+            pass
 
 
 def finished(current):

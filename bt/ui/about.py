@@ -11,7 +11,7 @@ from . import theme as T
 from .i18n import tr
 from .widgets import IconButton, PillButton, soft_shadow
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 AUTHOR = "Neal Strassner"
 SHORTCUTS = [("Space", "Play / pause"), ("← →", "Previous / next sentence"),
              ("Shift ← →", "Back / forward 30 s"), ("[  ]", "Slower / faster"),
@@ -109,6 +109,55 @@ class LicenceDialog(QDialog):
         lay.addLayout(row)
 
 
+class Notice(QDialog):
+    """A short message in BookTalker's own card ('BookTalker 1.0.5 is available'): exec() is
+    Accepted when the reader clicks the gold button."""
+
+    def __init__(self, title, body, ok, cancel=None, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setModal(True)
+        card = _Card(None, self)
+        soft_shadow(card, 60, 18, 200)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(30, 30, 30, 40)
+        outer.addWidget(card)
+        self.setFixedWidth(600)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(36, 26, 36, 26)
+        t = QLabel(title)
+        t.setFont(T.font(24, QFont.DemiBold, T.DISPLAY, -0.3))
+        lay.addWidget(t)
+        lay.addSpacing(8)
+        b = QLabel(body)
+        b.setWordWrap(True)
+        b.setFont(T.font(13))
+        b.setStyleSheet(f"color: {T.TEXT_2};")
+        lay.addWidget(b)
+        lay.addSpacing(18)
+        foot = QHBoxLayout()
+        foot.addStretch()
+        if cancel:
+            no = PillButton(cancel)
+            no.clicked.connect(self.reject)
+            foot.addWidget(no)
+            foot.addSpacing(8)
+        yes = PillButton(ok, primary=True)
+        yes.clicked.connect(self.accept)
+        foot.addWidget(yes)
+        lay.addLayout(foot)
+        self.adjustSize()
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Escape:
+            self.reject()
+        elif e.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.accept()
+        else:
+            super().keyPressEvent(e)
+
+
 class _UpdateSignals(QObject):
     checked = Signal(object, str)       # update.latest() plus "plan", or None; error
     progress = Signal(float)
@@ -116,7 +165,7 @@ class _UpdateSignals(QObject):
 
 
 class AboutDialog(QDialog):
-    def __init__(self, parent=None, check=False):
+    def __init__(self, parent=None, check=False, install=False):
         super().__init__(parent)
         self._sig = _UpdateSignals(self)
         self._sig.checked.connect(self._checked)
@@ -231,6 +280,7 @@ class AboutDialog(QDialog):
         lay.addLayout(row)
         # some languages need more room for the shortcut list: widen rather than cut
         self.setFixedSize(max(700, self.sizeHint().width()), 800)
+        self._install_now = install                   # (the reader already said yes to the update)
         if check:                                     # (opened from 'a new version is out')
             QTimer.singleShot(0, self._update_clicked)
 
@@ -307,6 +357,9 @@ class AboutDialog(QDialog):
             mb = max(1, round(size / 1e6)) if size else 0
             self.update_btn.setText(tr("Install version {v}", v=found["version"]) + (f"  ({mb} MB)" if mb else ""))
             self._note(tr("Version {v} is available. Your books, bookmarks and voices stay as they are.", v=found["version"]))
+            if self._install_now:
+                self._install_now = False
+                self._update_clicked()
 
     def _progress(self, fraction):
         self.update_btn.setText(tr("Downloading the update — {pct}%", pct=round(100 * fraction)))

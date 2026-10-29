@@ -3,7 +3,7 @@
 ; offers "only for me", which needs no administrator and installs into %LOCALAPPDATA%\Programs.
 
 #define AppName "BookTalker"
-#define AppVersion "1.0.4"
+#define AppVersion "1.0.5"
 #define AppExe "BookTalker.exe"
 
 [Setup]
@@ -21,6 +21,8 @@ OutputDir=Output
 OutputBaseFilename=BookTalker-Setup-{#AppVersion}
 SetupIconFile=..\booktalker.ico
 UninstallDisplayIcon={app}\{#AppExe}
+; listed as just "BookTalker": the version sits in its own column, which updates keep current
+UninstallDisplayName={#AppName}
 Compression=lzma2/max
 SolidCompression=yes
 LZMAUseSeparateProcess=yes

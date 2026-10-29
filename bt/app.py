@@ -22,7 +22,7 @@ from .llm import SmartTranslator
 from .translate import LANGS, Translator
 from .ui import i18n, icons, theme as T
 from .ui.i18n import lang_values, tr
-from .ui.about import AboutDialog
+from .ui.about import AboutDialog, Notice
 from .ui.tools import BookmarksDialog, ExportDialog
 from .ui.voicepicker import DownloadPrompt, VoicePicker
 from .ui.welcome import Welcome
@@ -847,8 +847,8 @@ class Main(QMainWindow):
         self._refresh_welcome()
         self.stack.setCurrentWidget(self.welcome)
 
-    def _about(self, check=False):
-        AboutDialog(self, check=check).exec()
+    def _about(self, check=False, install=False):
+        AboutDialog(self, check=check, install=install).exec()
 
     def check_for_update(self):
         """A few seconds after opening, ask BookTalker's GitHub page quietly whether a newer
@@ -865,8 +865,14 @@ class Main(QMainWindow):
         QTimer.singleShot(4000, lambda: threading.Thread(target=work, daemon=True).start())
 
     def _update_found(self, version):
-        self.stage.toast.show_message(tr("Version {v} is available. Click here to update.", v=version),
-                                      ms=15000, on_click=lambda: self._about(check=True))
+        """A window of its own (the welcome screen and the reader both show it); yes opens About,
+        which compares the files and installs straight away."""
+        box = Notice(tr("BookTalker update"),
+                     tr("BookTalker {v} is available. Update now?\n\nOnly the files that changed download. "
+                        "Your books, bookmarks and voices stay as they are.", v=version),
+                     tr("Update now"), tr("Not now"), parent=self)
+        if box.exec():
+            self._about(check=True, install=True)
 
     # ---- search -----------------------------------------------------------------------
     def _run_search(self):
@@ -1075,6 +1081,9 @@ class Main(QMainWindow):
             suggest.add(voices.recommended(ui))      # e.g. a Spanish voice for a Spanish Windows
         d = VoicePicker(first_run, [c for c in priority if c], suggest, self)
         d.exec()
+        if d.removed:                                    # (Windows' list of programs shows the new size)
+            from . import update
+            threading.Thread(target=update.fix_listing, daemon=True).start()
         self.settings["voices_setup"] = True
         save_settings(self.settings)
         if d.failed_remove:
@@ -2031,11 +2040,14 @@ def run(path=None):
     w.show()
     from . import update
     from .ui.about import VERSION
+    threading.Thread(target=update.fix_listing, daemon=True).start()
     after = update.finished(VERSION)
     if after:
         state, version = after
-        w.stage.toast.show_message(tr("BookTalker was updated to version {v}." if state == "done" else
-                                      "The update to version {v} did not finish. Try again from About.", v=version), ms=6000)
+        QTimer.singleShot(500, lambda: Notice(
+            tr("BookTalker update"), tr("BookTalker was updated to version {v}." if state == "done" else
+                                        "The update to version {v} did not finish. Try again from About.", v=version),
+            tr("Close"), parent=w).exec())
     else:
         w.check_for_update()
     return app.exec()

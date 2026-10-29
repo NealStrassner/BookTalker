@@ -170,6 +170,8 @@ class Download(threading.Thread):
                     buf.close()
                     os.replace(dest + ".part", dest)
             self.on_done(None)
+            from . import update
+            update.fix_listing()            # (Windows' list of programs shows the new size)
         except Exception as e:      # noqa: BLE001 — reported to the user
             self.on_done(str(e) or e.__class__.__name__)
 
