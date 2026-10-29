@@ -190,6 +190,7 @@ class Signals(QObject):
     dl_done = Signal(str)                   # error ("" = success)
     titles_ready = Signal(object)           # (book, target language, chapter titles translated)
     book_title_ready = Signal(object)       # (book, target language, the book's title translated)
+    update_found = Signal(str)              # a newer version's number
 
 
 def line_bars(rects, page):
@@ -294,6 +295,7 @@ class Main(QMainWindow):
         self.sig.dl_progress.connect(self._dl_progress)
         self.sig.dl_done.connect(self._dl_done)
         self.sig.titles_ready.connect(self._titles_ready)
+        self.sig.update_found.connect(self._update_found)
         self.sig.book_title_ready.connect(self._book_title_ready)
         self._dl = None
         self.models = Models(self.sig.voice_ready.emit)
@@ -844,8 +846,26 @@ class Main(QMainWindow):
         self._refresh_welcome()
         self.stack.setCurrentWidget(self.welcome)
 
-    def _about(self):
-        AboutDialog(self).exec()
+    def _about(self, check=False):
+        AboutDialog(self, check=check).exec()
+
+    def check_for_update(self):
+        """A few seconds after opening, ask BookTalker's GitHub page quietly whether a newer
+        version is out (only the list of releases is fetched; offline, nothing is said)."""
+        def work():
+            try:
+                from . import update
+                from .ui.about import VERSION
+                found = update.latest()
+                if found and update.is_newer(found["version"], VERSION):
+                    self.sig.update_found.emit(found["version"])
+            except Exception:
+                pass
+        QTimer.singleShot(4000, lambda: threading.Thread(target=work, daemon=True).start())
+
+    def _update_found(self, version):
+        self.stage.toast.show_message(tr("Version {v} is available. Click here to update.", v=version),
+                                      ms=15000, on_click=lambda: self._about(check=True))
 
     # ---- search -----------------------------------------------------------------------
     def _run_search(self):
@@ -2015,4 +2035,6 @@ def run(path=None):
         state, version = after
         w.stage.toast.show_message(tr("BookTalker was updated to version {v}." if state == "done" else
                                       "The update to version {v} did not finish. Try again from About.", v=version), ms=6000)
+    else:
+        w.check_for_update()
     return app.exec()

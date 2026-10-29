@@ -611,13 +611,16 @@ class Toast(QLabel):
         self.hide_timer.setSingleShot(True)
         self.hide_timer.timeout.connect(lambda: self._fade(0))
         self.current = None
+        self.on_click = None
 
-    def show_message(self, text, sticky=False, ms=2600):
+    def show_message(self, text, sticky=False, ms=2600, on_click=None):
         if text == self.current and self.eff.opacity() > 0.5:
             if not sticky:
                 self.hide_timer.start(ms)
             return
         self.current = text
+        self.on_click = on_click
+        self.setCursor(Qt.PointingHandCursor if on_click else Qt.ArrowCursor)
         self.setText(text)
         announce(self, text)
         self.adjustSize()
@@ -637,6 +640,14 @@ class Toast(QLabel):
 
     def _fade(self, to):
         self.eff.fade_to(to)
+
+    def mousePressEvent(self, e):
+        if self.on_click and self.eff.opacity() > 0.5:
+            act, self.on_click = self.on_click, None
+            self.clear()
+            act()
+        else:
+            super().mousePressEvent(e)
 
     def paintEvent(self, _e):
         p = QPainter(self)

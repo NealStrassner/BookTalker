@@ -1,5 +1,5 @@
-"""Updates: asks BookTalker's GitHub page for a newer release - only when the reader clicks
-'Check for updates' (BookTalker never goes online by itself).
+"""Updates: asks BookTalker's GitHub page for a newer release when BookTalker opens (only the
+release list is read) and when the reader clicks 'Check for updates'.
 
 An installed BookTalker updates file by file. Each release carries the whole program as a zip
 (booktalker-files-<version>.zip), and a zip's list holds every file's size and CRC. BookTalker

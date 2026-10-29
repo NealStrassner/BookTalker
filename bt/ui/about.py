@@ -1,7 +1,7 @@
 """About BookTalker: art banner, credits, keyboard shortcuts."""
 import os
 
-from PySide6.QtCore import QObject, QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QDialog, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
@@ -10,7 +10,7 @@ from . import theme as T
 from .i18n import tr
 from .widgets import IconButton, PillButton, soft_shadow
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 AUTHOR = "Neal Strassner"
 SHORTCUTS = [("Space", "Play / pause"), ("← →", "Previous / next sentence"),
              ("Shift ← →", "Back / forward 30 s"), ("[  ]", "Slower / faster"),
@@ -115,7 +115,7 @@ class _UpdateSignals(QObject):
 
 
 class AboutDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, check=False):
         super().__init__(parent)
         self._sig = _UpdateSignals(self)
         self._sig.checked.connect(self._checked)
@@ -221,8 +221,10 @@ class AboutDialog(QDialog):
         lay.addLayout(row)
         # some languages need more room for the shortcut list: widen rather than cut
         self.setFixedSize(max(700, self.sizeHint().width()), 800)
+        if check:                                     # (opened from 'a new version is out')
+            QTimer.singleShot(0, self._update_clicked)
 
-    # ---- updates (only when asked: BookTalker never goes online by itself) ----------------
+    # ---- updates (BookTalker asks GitHub's release list only; nothing downloads unasked) ---
     def _note(self, text):
         self.update_note.setText(text)
         self.update_note.setVisible(bool(text))
