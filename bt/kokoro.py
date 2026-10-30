@@ -74,6 +74,8 @@ def to_kokoro(ps, kind):
         else:
             ps = ps.replace("oʊ", "O").replace("ɜːɹ", "ɜɹ").replace("ɜː", "ɜɹ").replace("ɪə", "iə").replace("ː", "")
         ps = ps.replace("o", "ɔ").replace("ɾ", "T").replace("ʔ", "t")
+        if ps.startswith("I") and not any(c in ps for c in "ˈˌ"):
+            ps = "ˈ" + ps     # the pronoun I: espeak leaves it unstressed and Kokoro then all but drops it (MEASURED 0.03 s)
         return ps.replace("ɹɹ", "ɹ")              # (a linking r after r-colored ə, 'sister on')
     for old, new in _OTHER:
         ps = ps.replace(old, new)
