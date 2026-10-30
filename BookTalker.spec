@@ -12,8 +12,11 @@ datas = [('models/layout.onnx', 'models'), ('models/layout.json', 'models'),   #
          ('models/nllb-600m-int8', 'models/nllb-600m-int8'),   # the fast translator (built in)
          ('models/tessdata', 'models/tessdata'),          # Tesseract readers: Bengali, Punjabi, Gujarati, Malayalam, Kannada, Sinhala, Burmese, Khmer, Lao, Tibetan, Georgian, Armenian, Amharic, Hebrew, Yiddish
          ('booktalker.ico', '.'),
-         ('LICENSE', '.'), ('THIRD_PARTY_NOTICES.md', '.'), ('licenses', 'licenses'),   # shown under About > Credits & licences
+         ('LICENSE', '.'), ('THIRD_PARTY_NOTICES.md', '.'), ('licenses', 'licenses'),   # shown under About > Credits & licenses
          ('art/hero.png', 'art'), ('art/about.png', 'art'), ('art/logo_256.png', 'art')]
+# the dedication photo (Grandpa Felix) at the top of Credits & licenses: kept off GitHub like the
+# installer's, so a build from the public source simply has no photo
+datas += [(f, 'art') for f in glob.glob('installer/dedication/photo_630.bmp')]
 DEFAULT_VOICE = 'en_GB-alba-medium'     # recordings CC BY 4.0: free to share (Lessac's are research-only)
 datas += [(f, 'voices') for f in glob.glob(f'voices/{DEFAULT_VOICE}.ort') + glob.glob(f'voices/{DEFAULT_VOICE}.onnx.json')]
 datas += collect_data_files('piper')           # espeak-ng data

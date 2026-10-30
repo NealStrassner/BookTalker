@@ -70,6 +70,35 @@ def _gold_links(doc):
         block = block.next()
 
 
+def _dedication_photo():
+    """The photo of Grandpa Felix: inside the built program (BookTalker.spec takes it from
+    installer/dedication, which stays off GitHub), else in that folder; None without it."""
+    for p in (resource("art", "photo_630.bmp"), resource("installer", "dedication", "photo_630.bmp")):
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def _dedication(view):
+    """At the top of the credits, scrolling with them: the photo of Grandpa Felix reading to his
+    grandchildren and the dedication beside it."""
+    photo = _dedication_photo()
+    if not photo:
+        return
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QTextCursor
+    cur = QTextCursor(view.document())
+    cur.movePosition(QTextCursor.Start)
+    cur.insertHtml(
+        f"<table cellspacing='0' cellpadding='0'><tr>"
+        f"<td><img src='{QUrl.fromLocalFile(photo).toString()}' height='150'></td>"
+        f"<td width='18'></td><td valign='middle'>"
+        f"<span style='color:{T.GOLD}; font-size:17pt; font-weight:600'>Dedicated to my grandpa Felix</span><br>"
+        f"<span style='color:{T.TEXT_2}; font-size:11pt'>the original BookTalker &nbsp;·&nbsp; {AUTHOR}</span>"
+        f"</td></tr></table><p>&nbsp;</p>")
+    view.moveCursor(QTextCursor.Start)              # (the page opens at the top, with the dedication)
+
+
 class LicenseDialog(QDialog):
     """BookTalker's license (AGPL-3.0) and the third-party notices, shown in the app."""
 
@@ -84,6 +113,7 @@ class LicenseDialog(QDialog):
                            f" border-top-left-radius: 8px; border-top-right-radius: 8px; margin-right: 3px; }}"
                            f" QTabBar::tab:selected {{ color: {T.GOLD}; }} QTabWidget::pane {{ border: none; }}")
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(16, 16, 16, 16)
         tabs = QTabWidget()
         for title, name, md in ((tr("Credits"), "THIRD_PARTY_NOTICES.md", True), ("AGPL-3.0", "LICENSE", False)):
             view = QTextBrowser()
@@ -98,10 +128,11 @@ class LicenseDialog(QDialog):
             if md:
                 view.setMarkdown(text)
                 _gold_links(view.document())
+                _dedication(view)
             else:
                 view.setPlainText(text)
             tabs.addTab(view, title)
-        lay.addWidget(tabs)
+        lay.addWidget(tabs, 1)                      # (the notices get the room, not the dedication)
         row = QHBoxLayout()
         row.addStretch()
         ok = PillButton(tr("Close"), primary=True)

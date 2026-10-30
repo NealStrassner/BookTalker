@@ -4,13 +4,17 @@
 
 BookTalker reads books aloud and lights up each word on the page as it is spoken, so you can
 follow along. It is made for anyone who finds reading hard or tiring: children learning to read,
-older readers, people with low vision or dyslexia, people learning a foreign language, and anyone
-who would rather listen.
+older readers, people with low vision or dyslexia, people learning a foreign language, audiobook
+lovers and anyone who would rather listen.
+
+It can also read a book written in another language out loud in yours, translating as it goes:
+a French novel heard in English, a Russian one in Spanish. The original stays on the page and the
+translation shows beneath it.
 
 It runs entirely on your own computer. No account, no internet needed once installed, and your
 books never leave your PC. It is free.
 
-Made by Neal Strassner. If BookTalker helps you, you can support it at
+Made by Neal Strassner. If BookTalker helps you, you can buy him a coffee at
 [ko-fi.com/nealstrassner](https://ko-fi.com/nealstrassner).
 
 <p align="center">
@@ -25,13 +29,15 @@ Made by Neal Strassner. If BookTalker helps you, you can support it at
   the .nfo notes that come with programs, comics and manga (CBZ/CBR), web pages, e-mail, plain
   text, Markdown, scanned pages and photos of pages, and source code. The full list is
   [below](#files-it-opens).
+- **Listen in your own language:** a book in any of about 120 languages is translated as it is
+  read and heard in yours, the translation shown under the page. Offline: a fast translator is
+  built in, and an optional AI translator gives the best quality.
 - Reads in a natural voice and highlights each word as it is heard. Click any word to read from there.
 - Understands the page: skips headers, footers and page numbers, joins words broken across lines,
   follows text across columns and pages, reads comic panels and speech balloons in order (manga
   right to left).
 - Reads scanned books with its own text recognition, in Latin, Cyrillic, Greek, Arabic, Hebrew,
   Chinese, Japanese, Korean, Hindi, Bengali, Tamil, Telugu, Thai, Georgian, Armenian and more.
-- Translates as it reads: a book in one of about 120 languages can be heard in another.
 - One page at a time or two side by side like an open book; chapters with their listening
   times, search, bookmarks with notes, a sleep timer (minutes or "end of this chapter"),
   reading speed, and **Save as audiobook**: one MP3 per chapter in a folder named after the book,
