@@ -101,7 +101,7 @@ class BookCard(QWidget):
         p.setPen(QPen(QColor(255, 255, 255, 40 if self.hover else 18), 1))
         p.setBrush(QColor(28, 34, 46, 235) if self.hover else QColor(22, 27, 37, 220))
         p.drawRoundedRect(card, 14, 14)
-        # page thumbnail, centred, with a thin shadow
+        # page thumbnail, centered, with a thin shadow
         th = QRectF(card.left() + 14, card.top() + 14, card.width() - 28, self.TH - 28)
         if self.image is not None and not self.image.isNull():
             img = self.image

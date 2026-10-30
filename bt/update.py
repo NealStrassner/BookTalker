@@ -17,6 +17,7 @@ import zipfile
 import zlib
 
 from .packs import REPO, _ssl
+from .paths import package_family
 
 API = f"https://api.github.com/repos/{REPO}/releases?per_page=30"
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F2B1C9E-4D7A-4B3E-9A51-B00C7A1C0DE1}_is1"
@@ -59,6 +60,12 @@ def is_newer(remote, local):
 def program_dir():
     """The installed program's folder, or None for a development copy (which git updates)."""
     return os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else None
+
+
+def store_app():
+    """True when BookTalker came from the Microsoft Store (an MSIX package): the Store updates it
+    and lists it in Windows, so BookTalker's own updater and listing fixes stay out of the way."""
+    return package_family() is not None
 
 
 def work_dir(*parts):
@@ -246,7 +253,7 @@ def fix_listing():
     together with its downloads. An install for everyone needs administrator rights for this, so
     there the update's copier does it."""
     import winreg
-    if not program_dir():
+    if not program_dir() or store_app():
         return
     for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
         try:

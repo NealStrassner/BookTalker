@@ -445,7 +445,7 @@ class Unpack29:
 
 
 # ---- RAR 5 (WinRAR 5 and later). Follows the format as read by libarchive's
-# archive_read_support_format_rar5.c (BSD licence, Grzegorz Antoniak).
+# archive_read_support_format_rar5.c (BSD license, Grzegorz Antoniak).
 
 NC5, DC5, LDC5, RC5 = 306, 64, 16, 44
 

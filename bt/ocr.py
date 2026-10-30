@@ -223,7 +223,7 @@ class OCR:
         words, score = t.read(im, model)
         words = [(x0 / scale, y0 / scale, x1 / scale, y1 / scale, txt, line) for x0, y0, x1, y1, txt, line in words]
         if len(words) < 3 and not isinstance(img, Image.Image):
-            # a coloured frame round the page makes Tesseract take it all for one picture (a
+            # a colored frame round the page makes Tesseract take it all for one picture (a
             # Punjabi novel: 0 words; inside the frame: 120): read just where the text is
             box = self._text_area(img)
             if box is not None:
@@ -331,7 +331,7 @@ class OCR:
 
     def _paddle_scores(self, area):
         """{reader: (value, real-word share, mean confidence)} for every PaddleOCR reader on `area`.
-        The text lines are found once and each reader only recognises them (finding lines is
+        The text lines are found once and each reader only recognizes them (finding lines is
         most of a read and doesn't depend on the script): ~5 s instead of ~33 s for 11 readers."""
         from rapidocr.ch_ppocr_rec import TextRecInput
         from rapidocr.utils.process_img import get_rotate_crop_image
@@ -371,7 +371,7 @@ class OCR:
             # all Tesseract models try the band only when no PaddleOCR reader read it well
             clear = best[2] >= 0.9 and best[0] >= 50 and best[3] >= 0.5
             fair = best[1] not in ("ch", "latin") and best[2] >= 0.75 and best[0] >= 50 and best[3] >= 0.5
-            # (the Hindi reader reads its neighbours Bengali, Gurmukhi, Gujarati "confidently" as
+            # (the Hindi reader reads its neighbors Bengali, Gurmukhi, Gujarati "confidently" as
             # junk: its wins are always checked against Tesseract)
             t = self._tess_contest(img, area, scan=not (clear or fair) or best[1] == "devanagari")
             if t and (t[2] or t[0] > best[0]):

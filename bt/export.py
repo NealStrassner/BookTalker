@@ -29,8 +29,10 @@ def find_year(source, metadata):
             with zipfile.ZipFile(source) as z:
                 opf = next((n for n in z.namelist() if n.lower().endswith(".opf")), None)
                 if opf:
-                    m = re.search(rb"<dc:date[^>]*>\s*(\d{4})", z.read(opf))
-                    if m:
+                    data = z.read(opf)
+                    m = re.search(rb"<dc:date[^>]*>\s*(\d{4})", data)
+                    # (a free e-book edition's date is the day it went online: 1997 for an 1873 novel)
+                    if m and not re.search(rb"(?i)gutenberg|standardebooks", data):
                         return m.group(1).decode()
         except Exception:
             pass
@@ -64,6 +66,46 @@ def plan(book, titles=None):
         return out, 0
     n = book.page_count
     return [(f"Pages {a + 1}-{min(n, a + PAGES_PER_PART)}", (a, 0)) for a in range(0, n, PAGES_PER_PART)], 0
+
+
+PLAYLISTS = (("m3u8", "M3U8"), ("m3u", "M3U"), ("pls", "PLS"), ("xspf", "XSPF"), ("wpl", "WPL (Windows Media Player)"))
+
+
+def write_playlist(kind, folder, tracks, album, artist):
+    """A playlist of the audiobook's files, saved in its folder and named after it.
+    tracks: [(file name, title, seconds)]. Files are named relative to the playlist, so the
+    folder can be moved or copied to a phone. -> the playlist's path."""
+    from urllib.parse import quote
+    from xml.sax.saxutils import escape
+    path = os.path.join(folder, f"{os.path.basename(folder)}.{kind}")
+    who = f"{artist} - " if artist else ""
+    if kind in ("m3u", "m3u8"):
+        lines = ["#EXTM3U", f"#PLAYLIST:{album}"]
+        for name, title, secs in tracks:
+            lines += [f"#EXTINF:{round(secs)},{who}{title}", name]
+    elif kind == "pls":
+        lines = ["[playlist]"]
+        for k, (name, title, secs) in enumerate(tracks, 1):
+            lines += [f"File{k}={name}", f"Title{k}={who}{title}", f"Length{k}={round(secs)}"]
+        lines += [f"NumberOfEntries={len(tracks)}", "Version=2"]
+    elif kind == "xspf":
+        lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+                 '<playlist version="1" xmlns="http://xspf.org/ns/0/">', f"  <title>{escape(album)}</title>",
+                 "  <trackList>"]
+        for k, (name, title, secs) in enumerate(tracks, 1):
+            lines += ["    <track>", f"      <location>{escape(quote(name))}</location>",
+                      f"      <title>{escape(title)}</title>", f"      <creator>{escape(artist or '')}</creator>",
+                      f"      <album>{escape(album)}</album>", f"      <trackNum>{k}</trackNum>",
+                      f"      <duration>{round(secs * 1000)}</duration>", "    </track>"]
+        lines += ["  </trackList>", "</playlist>"]
+    else:                                                   # wpl
+        lines = ['<?wpl version="1.0"?>', "<smil>", "  <head>", f"    <title>{escape(album)}</title>",
+                 "  </head>", "  <body>", "    <seq>"]
+        lines += [f'      <media src="{escape(name, {chr(34): "&quot;"})}"/>' for name, _t, _s in tracks]
+        lines += ["    </seq>", "  </body>", "</smil>"]
+    with open(path, "w", encoding="utf-8", newline="\r\n") as f:
+        f.write("\n".join(lines) + "\n")
+    return path
 
 
 def _sentences(book, start, stop):
@@ -178,7 +220,8 @@ def _run(job, q):
     first, last = 0, len(parts) - 1
     if job.get("chapter_range"):
         first, last = (offset + k for k in job["chapter_range"])
-    chosen = [(i, parts[i][0], parts[i][1], parts[i + 1][1] if i + 1 < len(parts) else None)
+    # the last part stops where a Project Gutenberg license begins (bt/book.py)
+    chosen = [(i, parts[i][0], parts[i][1], parts[i + 1][1] if i + 1 < len(parts) else book.end_at)
               for i in range(first, last + 1)]
     lists = [(i, title, list(_sentences(book, start, stop))) for i, title, start, stop in chosen]
     lists = [(i, t, ss) for i, t, ss in lists if any(w.say for s in ss for w in s.words) or any(s.code for s in ss)]
@@ -197,8 +240,9 @@ def _run(job, q):
     os.makedirs(folder, exist_ok=True)
     Writer = _writer()
     width = max(2, len(str(len(lists))))
-    done, files = 0, []
+    done, files, tracks = 0, [], []
     for n, (i, title, sents) in enumerate(lists, 1):
+        samples = 0
         q.put(("file", n, title))
         name = f"{n:0{width}d} - {safe_name(title)}{Writer.ext}"
         path = os.path.join(folder, name)
@@ -217,12 +261,16 @@ def _run(job, q):
             if any(w.say for w in s.words):
                 audio, _ = speaker.speak(s)
                 out.write((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes())
+                samples += len(audio)
             done += 1
             q.put(("progress", done / total))
         out.close()
         os.replace(path + ".part", path)
         files.append(path)
+        tracks.append((name, title, samples / speaker.rate))
     if translator:
         translator.shutdown()
     book.close()
+    if job.get("playlist") and tracks:
+        files.append(write_playlist(job["playlist"], folder, tracks, job["title"], job.get("author")))
     q.put(("done", folder, files))

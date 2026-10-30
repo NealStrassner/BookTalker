@@ -28,6 +28,7 @@ class Player:
         self.last_engine = None             # "ai" or "fast": which translator made the last sentence
         self.rate = 22050                   # every bundled voice; no need to load one here
         self.speed = 1.0
+        self.pace = None                    # seconds a letter at this speed, measured on what this voice says
         self.volume = 1.0                   # the sleep timer fades out with it
         self.lock = threading.Lock()
         self.queue = collections.deque()    # (sentence, audio, times, spoken_words)
@@ -69,6 +70,8 @@ class Player:
             self.paused = paused
 
     def set_speed(self, speed):
+        if speed != self.speed:
+            self.pace = None                # (the pauses between words don't speed up: measured anew)
         self.speed = speed
         self._restart_here()
 
@@ -76,6 +79,8 @@ class Player:
         """Switch voice and/or original-vs-translation; carries on from the same sentence.
         (All bundled voices are 22050 Hz, so the audio stream stays as it is; the new
         voice loads in the synthesis thread, not here.)"""
+        if voice != self.voice:
+            self.pace = None                # each voice has its own pace
         self.voice, self.translate, self.src_code = voice, translate, src_code
         self.lang = lang or self.lang
         self._restart_here()
@@ -117,6 +122,7 @@ class Player:
         if sentence.literal or not (self.translate or sentence.code):
             audio, times = speaker.speak(sentence, self.speed)
             self._check_pace(sentence, audio)
+            self._learn_pace(sentence.words, audio, sentence.pause)
             return audio, times, sentence.words
         # wait for the AI only as long as the audio already queued lasts
         with self.lock:
@@ -134,7 +140,20 @@ class Player:
         words = [Word(t, t, []) for t in text.split()]
         spoken = Sentence(key=sentence.key, words=words, pause=sentence.pause, page=sentence.page)
         audio, times = speaker.speak(spoken, self.speed)
+        if not sentence.code:                                       # (an explanation outruns its code)
+            self._learn_pace(sentence.words, audio, sentence.pause)  # per letter of the book's own text
         return audio, times, words
+
+    def _learn_pace(self, words, audio, pause):
+        """How long this voice takes a letter of the book at the speed it reads at (for the
+        listening times shown; read in translation, a letter of the original): an average that
+        follows the sentences it has said. (MEASURED: at 1.3× the voices are only ~15% quicker,
+        the pauses between words staying as they are, so a pace at 1× can't simply be divided.)"""
+        letters = sum(c.isalpha() for w in words for c in (w.say or ""))
+        if letters < 20:
+            return
+        pace = max(0.0, len(audio) / self.rate - pause) / letters
+        self.pace = pace if self.pace is None else 0.85 * self.pace + 0.15 * pace
 
     def _check_pace(self, sentence, audio):
         """A sentence spoken far faster than speech can be (a reader heard a voice 'saying only

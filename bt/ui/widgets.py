@@ -4,9 +4,10 @@ from PIL import Image, ImageDraw, ImageFilter
 from PySide6.QtCore import (Property, QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize,
                             Qt, QTimer, Signal)
 from PySide6.QtGui import (QColor, QCursor, QFont, QImage, QLinearGradient, QPainter, QPainterPath,
-                           QPen, QRadialGradient)
-from PySide6.QtWidgets import (QComboBox, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QHBoxLayout,
-                               QLabel, QSizePolicy, QToolButton, QWidget)
+                           QPalette, QPen, QRadialGradient)
+from PySide6.QtWidgets import (QApplication, QComboBox, QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
+                               QHBoxLayout, QLabel, QSizePolicy, QStyle, QStyledItemDelegate,
+                               QStyleOptionComboBox, QStyleOptionViewItem, QStylePainter, QToolButton, QWidget)
 
 from . import icons, theme as T
 from .i18n import tr
@@ -90,6 +91,54 @@ class PageBox(QComboBox):
         p.setPen(QPen(QColor(T.TEXT_2), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         cx, cy = self.width() - 12, self.height() / 2 + 1
         p.drawPolyline([QPointF(cx - 3.5, cy - 2), QPointF(cx, cy + 1.5), QPointF(cx + 3.5, cy - 2)])
+
+
+class ElidedBox(QComboBox):
+    """A list box whose shown choice ends in '…' when it is too long (Qt cuts it mid-word);
+    the whole name is its tooltip."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.currentTextChanged.connect(self.setToolTip)
+
+    def paintEvent(self, e):
+        p = QStylePainter(self)
+        opt = QStyleOptionComboBox()
+        self.initStyleOption(opt)
+        if self.currentIndex() < 0 and self.placeholderText():       # as QComboBox paints it
+            opt.palette.setBrush(QPalette.ButtonText, opt.palette.placeholderText())
+            opt.currentText = self.placeholderText()
+        p.drawComplexControl(QStyle.CC_ComboBox, opt)
+        room = self.style().subControlRect(QStyle.CC_ComboBox, opt, QStyle.SC_ComboBoxEditField, self)
+        opt.currentText = opt.fontMetrics.elidedText(opt.currentText, Qt.ElideRight, room.width() - 4)
+        p.drawControl(QStyle.CE_ComboBoxLabel, opt)
+
+
+TIME_ROLE = Qt.UserRole + 1                     # a chapter's listening time, as shown ('18 min')
+
+
+class ChapterItems(QStyledItemDelegate):
+    """Chapter list rows: the title, and the chapter's listening time at the right in gray."""
+
+    def paint(self, p, option, index):
+        when = index.data(TIME_ROLE)
+        if not when:
+            return super().paint(p, option, index)
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        text, opt.text = opt.text, ""
+        style = opt.widget.style() if opt.widget else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, opt, p, opt.widget)   # background, selection
+        fm, r = opt.fontMetrics, opt.rect.adjusted(8, 0, -10, 0)
+        room = r.width() - fm.horizontalAdvance(when) - 16
+        p.save()
+        p.setFont(opt.font)
+        p.setPen(QColor(T.GOLD if opt.state & QStyle.State_Selected else T.TEXT))
+        p.drawText(r.adjusted(0, 0, -(r.width() - room), 0), Qt.AlignVCenter | Qt.AlignLeft,
+                   fm.elidedText(text, Qt.ElideRight, room))
+        p.setPen(QColor(T.TEXT_3))
+        p.drawText(r, Qt.AlignVCenter | Qt.AlignRight, when)
+        p.restore()
 
 
 class Spinner(QWidget):

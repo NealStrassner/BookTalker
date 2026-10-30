@@ -28,7 +28,8 @@ NATIVE = {".epub", ".mobi", ".fb2", ".xps", ".oxps", ".svg",
 WORD = {".docx", ".doc", ".rtf", ".odt", ".docm", ".dotx", ".dot", ".ott", ".wpd", ".wp", ".wp4", ".wp5", ".wp6"}
 SLIDES = {".pptx", ".ppt", ".odp", ".pptm", ".ppsx", ".pps", ".potx", ".otp"}
 TEXT = {".txt", ".md", ".markdown", ".text", ".log", ".csv", ".tsv", ".rst", ".adoc", ".asciidoc",
-        ".org", ".nfo", ".tex"}
+        ".org", ".tex"}
+NFO = {".nfo", ".diz"}              # release notes with ASCII art, in the DOS character set (code page 437)
 WEB = {".html", ".htm", ".xhtml"}
 KINDLE = {".azw3", ".azw", ".kf8", ".prc", ".pdb"}
 CODE = {".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh",
@@ -39,22 +40,37 @@ CODE = {".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".c", ".h",
         ".xml", ".gradle", ".cmake", ".mk", ".dockerfile"}   # source files: read as code (bt/code.py)
 OTHER = {".chm", ".ods", ".ots", ".eml", ".mht", ".mhtml", ".txtz", ".htmlz", ".fbz", ".lit", ".djvu", ".djv",
          ".cbr", ".cbz", ".cbt"}
+MAN = {f".{n}{s}" for n in range(1, 10) for s in ("", "p", "pm", "ssl", "x")} | {".man", ".n"}   # manual pages
+INFO = {".info"}                                                                              # GNU Info
+PACKED = MAN | INFO | TEXT          # also opened gzip-packed ('ls.1.gz'), as Linux keeps manuals
 PICTURES = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff", ".jp2", ".jxr")
-SUPPORTED = {".pdf"} | NATIVE | WORD | SLIDES | TEXT | WEB | KINDLE | OTHER | CODE
-OPEN_FILTER = "Readable files (" + " ".join("*" + e for e in sorted(SUPPORTED)) + ");;PDF (*.pdf);;All files (*.*)"
+SUPPORTED = {".pdf"} | NATIVE | WORD | SLIDES | TEXT | WEB | KINDLE | OTHER | CODE | MAN | INFO | NFO
+OPEN_FILTER = ("Readable files (" + " ".join("*" + e for e in sorted(SUPPORTED) + sorted(e + ".gz" for e in PACKED))
+               + ");;PDF (*.pdf);;All files (*.*)")
 
 BOOK_PAGE = pymupdf.Rect(0, 0, 432, 648)      # 6 x 9 in, a trade-book page
 COMIC_MARK = "BookTalker comic"               # in a converted comic's keywords
 CODE_MARK = "BookTalker code"                 # in a converted source file's keywords
 CODE_PAGE = pymupdf.Rect(0, 0, 612, 792)      # wider pages, so lines of code rarely wrap
-CONVERT_VERSION = 4            # 2: RAR 4 long distances + filters fixed, Gutenberg licence dropped; 3: code kept as code;
-                               # 4: exact words kept for shaped scripts (layout.EXACT_WORDS)
+CONVERT_VERSION = 6            # 2: RAR 4 long distances + filters fixed, Gutenberg license dropped; 3: code kept as code;
+                               # 4: exact words kept for shaped scripts (layout.EXACT_WORDS); 5: quoted notes are
+                               # not headings, a numbered chapter's name may end in ? or !; 6: WebP comic pages,
+                               # .nfo art dropped
 NEW_PAGE = "<!--bt:newpage-->"               # in our HTML: start a new page here (CSS page breaks hang the typesetter)
 NO_WINDOW = 0x08000000                         # CREATE_NO_WINDOW
 
 
+def _kind(path):
+    """The file's type: its extension, or for a gzip-packed manual or text the one inside."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".gz":
+        inner = os.path.splitext(path[:-3])[1].lower()
+        return inner if inner in PACKED else ext
+    return ext
+
+
 def supported(path):
-    return os.path.splitext(path)[1].lower() in SUPPORTED
+    return _kind(path) in SUPPORTED
 
 
 def cached(path):
@@ -107,9 +123,17 @@ def _apart(path, q):
         q.put(("error", str(e) or e.__class__.__name__))
 
 
+def _has_toc(pdf):
+    try:
+        with pymupdf.open(pdf) as d:
+            return bool(d.get_toc())
+    except Exception:
+        return False
+
+
 def to_pdf(path, progress=None):
     """Return the path of a PDF showing this file (converted once, then cached)."""
-    ext = os.path.splitext(path)[1].lower()
+    ext = _kind(path)
     if ext == ".pdf":
         return path
     out_dir = os.path.join(os.path.dirname(cache_dir()), "converted")
@@ -135,6 +159,16 @@ def to_pdf(path, progress=None):
             if ext != ".mobi":
                 raise
             _kindle(path, tmp)                     # a KF8-only .mobi: PyMuPDF can't, our reader can
+        else:
+            if ext == ".mobi" and not _has_toc(tmp):   # PyMuPDF keeps no chapters of an older .mobi: ours does
+                try:
+                    _kindle(path, tmp + ".k.pdf")
+                    if _has_toc(tmp + ".k.pdf"):
+                        os.replace(tmp + ".k.pdf", tmp)
+                except Exception:
+                    pass
+                if os.path.exists(tmp + ".k.pdf"):
+                    os.remove(tmp + ".k.pdf")
     elif ext in KINDLE:
         _kindle(path, tmp)
     elif ext in WORD:
@@ -148,6 +182,21 @@ def to_pdf(path, progress=None):
     elif ext == ".tex":
         from . import readers
         _typeset(readers.tex(_read_text(path)), tmp)
+    elif ext in MAN:
+        from . import readers
+        _typeset(readers.man(_read_text(path)), tmp, title=_stem(path))
+    elif ext in INFO:
+        from . import readers
+        _typeset(readers.info(_info_text(path)), tmp, title=_stem(path))
+    elif ext in NFO:
+        from . import readers
+        with open(path, "rb") as f:
+            raw = f.read()
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("cp437")
+        _typeset(readers.nfo(text), tmp, title=_stem(path))
     elif ext in CODE or os.path.basename(path).lower() in ("makefile", "dockerfile"):
         _code_file(path, tmp)
     elif ext in TEXT:
@@ -195,8 +244,29 @@ def _keep_exact(doc, exact):
                         desc="BookTalker: the exact words of pages whose PDF text lost letters")
 
 
+def _open_picture(data):
+    """A picture as a PyMuPDF document. MuPDF can't read WebP: such pictures go through Pillow."""
+    try:
+        return pymupdf.open(stream=data)
+    except Exception:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(data))
+        if im.mode not in ("1", "L", "LA", "P", "RGB", "RGBA"):
+            im = im.convert("RGB")
+        buf = io.BytesIO()
+        im.save(buf, "PNG")
+        return pymupdf.open(stream=buf.getvalue(), filetype="png")
+
+
 def _native(path, out):
-    src = pymupdf.open(path)
+    try:
+        src = pymupdf.open(path)
+    except Exception:
+        if not path.lower().endswith(PICTURES):
+            raise
+        with open(path, "rb") as f:
+            src = _open_picture(f.read())
     exact = {}
     if src.is_reflowable:
         src.layout(rect=BOOK_PAGE, fontsize=11)
@@ -296,6 +366,25 @@ def _word_ourselves(path, out, ext):
     _typeset(body, out)
 
 
+def _as_presentation(path):
+    """A slide show (.ppsx) or template (.potx) as an ordinary presentation: python-pptx opens
+    only those, though the slides inside are the same."""
+    import io
+    import zipfile
+    src, buf = zipfile.ZipFile(path), io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as dst:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename == "[Content_Types].xml":
+                for kind in (b"slideshow", b"template"):
+                    data = data.replace(b"presentationml." + kind + b".main+xml",
+                                        b"presentationml.presentation.main+xml")
+            dst.writestr(item, data)
+    src.close()
+    buf.seek(0)
+    return buf
+
+
 def _slides_ourselves(path, out, ext):
     from . import readers
     slide_page = pymupdf.Rect(0, 0, 720, 405)
@@ -306,7 +395,7 @@ def _slides_ourselves(path, out, ext):
     else:
         from pptx import Presentation
         parts = []
-        for i, slide in enumerate(Presentation(path).slides, 1):
+        for i, slide in enumerate(Presentation(_as_presentation(path)).slides, 1):
             texts = []
             for shape in slide.shapes:
                 if shape.has_text_frame:
@@ -402,7 +491,7 @@ def _comic(path, out):
     pdf = pymupdf.open()
     for _name, data in pages:
         try:
-            img = pymupdf.open(stream=data)
+            img = _open_picture(data)
             pdf.insert_pdf(pymupdf.open("pdf", img.convert_to_pdf()))
             img.close()
         except Exception:
@@ -421,7 +510,7 @@ GUTENBERG_END = re.compile(r"\*{3}\s*END OF (THE|THIS) PROJECT GUTENBERG", re.I)
 
 
 def strip_gutenberg(text, html=False):
-    """Project Gutenberg files wrap the book in an English licence (header and footer): keep
+    """Project Gutenberg files wrap the book in an English license (header and footer): keep
     only what lies between its '*** START OF' and '*** END OF' lines. In HTML the cut runs to
     the end of the element holding the marker, and the page head is kept."""
     a, b = GUTENBERG_START.search(text), GUTENBERG_END.search(text)
@@ -446,8 +535,36 @@ def _code_file(path, out):
              title=os.path.basename(path), keywords=CODE_MARK)
 
 
+def _stem(path):
+    """'ls.1.gz' -> 'ls.1': the name a manual is known by."""
+    name = os.path.basename(path)
+    return name[:-3] if name.lower().endswith(".gz") else os.path.splitext(name)[0]
+
+
+def _info_text(path):
+    """An Info manual's text. A big one is split: its first file lists the others
+    ('Indirect:' 'gcc.info-1: 1234'), which are read in that order."""
+    text = _read_text(path)
+    m = re.search(r"\x1f\s*\nIndirect:\n(.*?)\x1f", text, re.S)
+    if not m:
+        return text
+    folder, parts = os.path.dirname(path), [text]
+    for line in m.group(1).splitlines():
+        name = line.split(":")[0].strip()
+        for cand in (name, name + ".gz"):
+            p = os.path.join(folder, cand)
+            if name and os.path.exists(p):
+                parts.append(_read_text(p))
+                break
+    return "\x1f".join(parts)
+
+
 def _read_text(path):
-    raw = open(path, "rb").read()
+    with open(path, "rb") as f:
+        raw = f.read()
+    if path.lower().endswith(".gz"):
+        import gzip
+        raw = gzip.decompress(raw)
     for enc in ("utf-8-sig", "utf-16"):
         try:
             if enc == "utf-16" and not raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
@@ -549,7 +666,8 @@ def _pieces(body, size=20000):
 
 def _draw_reading(story, dev, rect):
     """Draw a placed story onto a PDF page, reading MuPDF's own letters on the way: the page is
-    recorded once, then played to the PDF and to a text page. -> _shaped_words of that page."""
+    recorded once, then played to the PDF and to a text page. -> (_shaped_words of that page,
+    whether any text was drawn)."""
     from pymupdf import mupdf
     box = mupdf.FzRect(*rect)
     everything = mupdf.FzRect(mupdf.FzRect.Fixed_INFINITE)
@@ -562,7 +680,8 @@ def _draw_reading(story, dev, rect):
     reader = pymupdf.DeviceWrapper(text, pymupdf.TEXTFLAGS_WORDS)
     mupdf.fz_run_display_list(recording, reader.this, mupdf.FzMatrix(), everything, mupdf.FzCookie())
     mupdf.fz_close_device(reader.this)
-    return _shaped_words(pymupdf.TextPage(text))
+    tp = pymupdf.TextPage(text)
+    return _shaped_words(tp), bool(tp.extractText().strip())
 
 
 def _typeset(body_html, out, is_html=True, page=BOOK_PAGE, images=None, title=None, keywords=None):
@@ -627,7 +746,7 @@ def _typeset(body_html, out, is_html=True, page=BOOK_PAGE, images=None, title=No
                         _on_page(n)
                 more, filled = story.place(pymupdf.Rect(where.x0, top, where.x1, where.y1))
                 story.element_positions(record, {"page_num": n})
-                words = _draw_reading(story, dev, page)
+                words, drew = _draw_reading(story, dev, page)
                 if words:                               # (pieces sharing a page: blocks numbered on)
                     have = exact.get(n - 1) or []
                     shift = 1 + max((w[5] for w in have), default=-1)
@@ -641,8 +760,11 @@ def _typeset(body_html, out, is_html=True, page=BOOK_PAGE, images=None, title=No
                     dev = None
                 else:
                     top = filled.y1                     # the next piece starts below this one
-                stuck = stuck + 1 if filled.is_empty else 0
-                if stuck >= 3:                          # something that can never fit: move on
+                # something that can never fit: move on. (MEASURED: a long table in a help file
+                # made MuPDF say 'more' while drawing nothing: 1,572 blank pages, up to the page
+                # limit. A piece with pictures may have pages without text, so it is spared.)
+                stuck = stuck + 1 if filled.is_empty or (not drew and "<img" not in piece) else 0
+                if stuck >= 3:
                     break
         if dev is not None:
             writer.end_page()

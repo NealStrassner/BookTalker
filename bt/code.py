@@ -312,7 +312,7 @@ WORDS = {"self": "it", "this": "it", "None": "nothing", "null": "nothing", "nil"
          "args": "arguments", "kwargs": "named arguments", "argv": "command-line arguments", "argc": "argument count",
          "elif": "otherwise if", "def": "define", "fn": "function",
          "func": "function", "var": "variable", "const": "constant", "dict": "dictionary",
-         "init": "initialise", "__init__": "set up", "tmp": "temporary", "idx": "index", "num": "number",
+         "init": "initialize", "__init__": "set up", "tmp": "temporary", "idx": "index", "num": "number",
          "cnt": "count", "msg": "message", "img": "image", "buf": "buffer", "cfg": "settings", "err": "error",
          "fd": "file", "fp": "file", "ptr": "pointer",
          "std": "standard", "cout": "the output", "cin": "the input", "endl": "a new line", "printf": "print"}

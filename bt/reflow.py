@@ -1,4 +1,4 @@
-"""Stage 2 — reflow. Turns labelled page blocks into spoken sentences.
+"""Stage 2 — reflow. Turns labeled page blocks into spoken sentences.
 
 - words hyphenated across a line end are rejoined (both halves stay highlighted)
 - wrapped lines are joined into true paragraphs, also across page and column breaks

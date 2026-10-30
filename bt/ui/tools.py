@@ -3,29 +3,80 @@ import os
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QComboBox, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QProgressBar, QRadioButton, QVBoxLayout)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QPlainTextEdit, QProgressBar, QRadioButton, QVBoxLayout)
 
 from . import theme as T
+from .about import _Card
 from .i18n import tr
-from .widgets import PillButton
+from .widgets import ElidedBox, PillButton, soft_shadow
 
 CSS = f"""
-QDialog {{ background: {T.INK_2}; }}
 QLabel {{ color: {T.TEXT}; }}
 QRadioButton {{ color: {T.TEXT}; font-size: 13px; spacing: 8px; }}
 QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 9px; border: 2px solid {T.TEXT_3}; background: transparent; }}
 QRadioButton::indicator:checked {{ border: 2px solid {T.GOLD};
     background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 {T.GOLD}, stop:0.5 {T.GOLD}, stop:0.56 transparent); }}
+QCheckBox {{ color: {T.TEXT}; font-size: 13px; spacing: 8px; }}
+QCheckBox::indicator {{ width: 14px; height: 14px; border-radius: 4px; border: 2px solid {T.TEXT_3}; background: transparent; }}
+QCheckBox::indicator:checked {{ border: 2px solid {T.GOLD}; background: {T.GOLD}; }}
 QComboBox {{ background: {T.INK_3}; border: 1px solid {T.LINE}; border-radius: 8px; padding: 5px 8px; font-size: 13px; }}
+QComboBox:disabled {{ color: {T.TEXT_3}; background: {T.INK_2}; }}
 QComboBox QAbstractItemView {{ background: {T.INK_2}; border: 1px solid {T.LINE};
     selection-background-color: {T.INK_3}; selection-color: {T.GOLD}; }}
 QListWidget {{ background: {T.INK_1}; border: 1px solid {T.LINE}; border-radius: 10px; padding: 4px; font-size: 13px; }}
+QPlainTextEdit {{ background: {T.INK_1}; color: {T.TEXT}; border: 1px solid {T.LINE}; border-radius: 10px; padding: 6px;
+    font-size: 13px; }}
 QListWidget::item {{ padding: 8px 6px; border-radius: 6px; }}
 QListWidget::item:selected {{ background: {T.INK_3}; color: {T.GOLD}; }}
 QProgressBar {{ background: {T.INK_1}; border: 1px solid {T.LINE}; border-radius: 6px; height: 12px; text-align: center; }}
 QProgressBar::chunk {{ background: {T.GOLD}; border-radius: 5px; }}
 """
+
+
+def _card_layout(dlg):
+    """The dialog as one of BookTalker's own cards (no Windows title bar): -> the card's layout."""
+    dlg.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+    dlg.setAttribute(Qt.WA_TranslucentBackground)
+    card = _Card(None, dlg)
+    soft_shadow(card, 60, 18, 200)
+    outer = QVBoxLayout(dlg)
+    outer.setContentsMargins(30, 30, 30, 40)
+    outer.addWidget(card)
+    return QVBoxLayout(card)
+
+
+class NoteDialog(QDialog):
+    """A bookmark's note, written in BookTalker's own card (Qt's input box draws nearly blank
+    under the app's style)."""
+
+    def __init__(self, parent, note=""):
+        super().__init__(parent)
+        self.setStyleSheet(CSS)
+        self.setModal(True)
+        self.setFixedSize(560, 380)
+        lay = _card_layout(self)
+        lay.setContentsMargins(26, 22, 26, 22)
+        lay.addWidget(_label(tr("Note"), 18, QFont.DemiBold))
+        lay.addWidget(_label(tr("Your note for this place:"), 13, color=T.TEXT_2))
+        self.edit = QPlainTextEdit(note)
+        lay.addWidget(self.edit, 1)
+        row = QHBoxLayout()
+        row.addStretch()
+        no = PillButton(tr("Cancel"))
+        no.clicked.connect(self.reject)
+        yes = PillButton(tr("Save"), primary=True)
+        yes.clicked.connect(self.accept)
+        row.addWidget(no)
+        row.addWidget(yes)
+        lay.addLayout(row)
+        self.edit.setFocus()
+
+    @staticmethod
+    def ask(parent, note=""):
+        """-> (text, True) when saved, ("", False) when canceled."""
+        d = NoteDialog(parent, note)
+        return (d.edit.toPlainText(), True) if d.exec() else ("", False)
 
 
 def default_audiobook_folder():
@@ -44,16 +95,17 @@ def _label(text, size=13, weight=QFont.Normal, color=T.TEXT):
 class ExportDialog(QDialog):
     """Choose what to save and where; then the progress while it is made (in its own process)."""
 
-    def __init__(self, parent, job, chapters, reading, folder):
+    def __init__(self, parent, job, chapters, reading, folder, playlist=None):
         """job: the export job without first/last/out_root (bt/export.run); chapters: titles as
-        shown (may be empty); reading: 'English translation — Lessac voice'; folder: last used."""
+        shown (may be empty); reading: 'English translation — Lessac voice'; folder: last used;
+        playlist: the playlist type last made ('m3u8'…), None for none."""
         super().__init__(parent)
-        from ..export import folder_name
+        from ..export import PLAYLISTS, folder_name
         self.job, self.proc, self.queue = dict(job), None, None
         self.setWindowTitle(tr("Save as audiobook"))
         self.setStyleSheet(CSS)
-        self.setMinimumWidth(520)
-        lay = QVBoxLayout(self)
+        self.setMinimumWidth(580)
+        lay = _card_layout(self)
         lay.setContentsMargins(26, 22, 26, 22)
         lay.setSpacing(10)
         lay.addWidget(_label(job["title"], 18, QFont.DemiBold))
@@ -67,7 +119,7 @@ class ExportDialog(QDialog):
         self.all_btn.setChecked(True)
         lay.addWidget(self.all_btn)
         self.some_btn = QRadioButton(tr("Chapters:"))
-        self.from_box, self.to_box = QComboBox(), QComboBox()
+        self.from_box, self.to_box = ElidedBox(), ElidedBox()
         if chapters:
             for t in chapters:
                 self.from_box.addItem(t)
@@ -96,6 +148,21 @@ class ExportDialog(QDialog):
         self._name = folder_name(job["title"], job.get("author"), job.get("year"))
         self.folder.textChanged.connect(self._show_where)
         self._show_where()
+        # a playlist of the MP3s for music players: ticked, its type can be chosen
+        row = QHBoxLayout()
+        self.list_btn = QCheckBox(tr("Make a playlist:"))
+        self.list_box = QComboBox()
+        for kind, label in PLAYLISTS:
+            self.list_box.addItem(label, kind)
+        kinds = [k for k, _l in PLAYLISTS]
+        self.list_box.setCurrentIndex(kinds.index(playlist) if playlist in kinds else 0)
+        self.list_btn.setChecked(playlist in kinds)
+        self.list_box.setEnabled(self.list_btn.isChecked())
+        self.list_btn.toggled.connect(self.list_box.setEnabled)
+        row.addWidget(self.list_btn)
+        row.addWidget(self.list_box)
+        row.addStretch()
+        lay.addLayout(row)
         self.status = _label("", 13, color=T.TEXT_2)
         self.bar = QProgressBar()
         self.bar.setRange(0, 1000)
@@ -120,6 +187,10 @@ class ExportDialog(QDialog):
         self.timer.timeout.connect(self._poll)
         self.done_folder = None
 
+    def playlist(self):
+        """The playlist type to make ('m3u8'…), None when unticked."""
+        return self.list_box.currentData() if self.list_btn.isChecked() else None
+
     def _show_where(self):
         self.where.setText(os.path.join(self.folder.text().strip(), self._name))
 
@@ -131,7 +202,7 @@ class ExportDialog(QDialog):
     def _start(self):
         import multiprocessing
         from .. import export
-        job = dict(self.job, out_root=self.folder.text().strip(), titles=self.chapters)
+        job = dict(self.job, out_root=self.folder.text().strip(), titles=self.chapters, playlist=self.playlist())
         if self.chapters and self.some_btn.isChecked():
             a, b = self.from_box.currentIndex(), self.to_box.currentIndex()
             # the plan may begin with an 'Opening' part before chapter 1: export.plan aligns the
@@ -200,6 +271,9 @@ class ExportDialog(QDialog):
             return
         self.accept()
 
+    def reject(self):                                  # Esc: as the Close / Cancel button (a hidden
+        self._close_or_cancel()                        # window must not go on recording)
+
     def closeEvent(self, e):
         if self.proc is not None:
             self.proc.terminate()
@@ -215,8 +289,8 @@ class BookmarksDialog(QDialog):
         self.marks, self.go, self.save = marks, go, save
         self.setWindowTitle(tr("Bookmarks"))
         self.setStyleSheet(CSS)
-        self.setMinimumSize(560, 420)
-        lay = QVBoxLayout(self)
+        self.setMinimumSize(620, 490)
+        lay = _card_layout(self)
         lay.setContentsMargins(22, 20, 22, 20)
         lay.addWidget(_label(tr("Bookmarks"), 18, QFont.DemiBold))
         self.list = QListWidget()
@@ -261,8 +335,7 @@ class BookmarksDialog(QDialog):
         i = self._current()
         if i is None:
             return
-        text, ok = QInputDialog.getMultiLineText(self, tr("Note"), tr("Your note for this place:"),
-                                                 self.marks[i].get("note", ""))
+        text, ok = NoteDialog.ask(self, self.marks[i].get("note", ""))
         if ok:
             self.marks[i]["note"] = text.strip()
             self.save(self.marks)

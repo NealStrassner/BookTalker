@@ -208,6 +208,15 @@ class LZX:
                         off = R[2]
                         R[2], R[0] = R[0], off
                     src = (self.wpos - off) & (wsize - 1)
+                    wp = self.wpos
+                    if (src + mlen <= wsize and wp + mlen <= wsize
+                            and (src + mlen <= wp or wp + mlen <= src)):   # no overlap, no wrap: copy at once
+                        seg = w[src:src + mlen]
+                        w[wp:wp + mlen] = seg
+                        out += seg
+                        self.wpos = (wp + mlen) & (wsize - 1)
+                        done += mlen
+                        continue
                     for _ in range(mlen):
                         b = w[src]
                         w[self.wpos] = b
@@ -304,12 +313,40 @@ class CHM:
         return bytes(out)
 
 
+def _closed(body):
+    """A help page's HTML with every tag closed: what it leaves open is closed at its end and a
+    closing tag that closes nothing is dropped. Each page is a document of its own, and the
+    typesetter cuts a long text into pieces only where all its tags are closed (MEASURED: the
+    pages of a 50 MB help file left 105 tags open, so it went in as one piece and never finished)."""
+    from .convert import VOID_TAGS
+    stack, out, at = [], [], 0
+    for m in re.finditer(r"<(/?)([A-Za-z][\w:-]*)[^>]*?(/?)>", body):
+        close, tag, selfclose = m.group(1), m.group(2).lower(), m.group(3)
+        if tag in VOID_TAGS or selfclose:
+            continue
+        if not close:
+            stack.append(tag)
+        elif tag in stack:
+            while stack and stack[-1] != tag:          # what was left open inside it closes here
+                out.append(body[at:m.start()] + f"</{stack.pop()}>")
+                at = m.start()
+            stack.pop()
+        else:                                          # closes nothing: dropped
+            out.append(body[at:m.start()])
+            at = m.end()
+    out.append(body[at:])
+    return "".join(out) + "".join(f"</{t}>" for t in reversed(stack))
+
+
 def read(path):
     """-> (html, title, {image name: bytes})"""
     c = CHM(path)
     names = [n for n in c.files if not n.startswith("::") and not n.startswith("/#") and not n.startswith("/$")]
     pages = [n for n in names if n.lower().endswith((".htm", ".html"))]
     order, titles = [], {}
+    by_name = {}                                       # lower-case name -> page (a big help file has thousands)
+    for p in pages:
+        by_name.setdefault(p.lower(), p)
     hhc = next((n for n in names if n.lower().endswith(".hhc")), None)
     if hhc:
         toc = (c.read(hhc) or b"").decode("cp1252", "replace")
@@ -318,7 +355,7 @@ def read(path):
             local = re.search(r'(?is)<param\s+name="Local"\s+value="([^"]*)"', obj)
             if local:
                 path_ = "/" + unquote(local.group(1).split("#")[0]).lstrip("/")
-                match = next((p for p in pages if p.lower() == path_.lower()), None)
+                match = by_name.get(path_.lower())
                 if match and match not in titles:
                     order.append(match)
                     titles[match] = htmlmod.unescape(name.group(1)) if name else ""
@@ -348,4 +385,11 @@ def read(path):
             body = f"<h1>{htmlmod.escape(title)}</h1>" + body
         parts.append(body)
     title = ""
-    return "\n".join(parts), title, images
+    html = "\n".join(parts)
+    from .convert import _pieces
+    if len(html) > 1000000 and max(len(p) for p in _pieces(html)) > 1000000:
+        # a long help file that doesn't come back to the top level would go in as one huge piece
+        # (hours): its pages are tidied first. (Only then - MEASURED: tidied, a normal help file
+        # that typesets fine whole lost words.)
+        html = "\n".join(_closed(p) for p in parts)
+    return html, title, images

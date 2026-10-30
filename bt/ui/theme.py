@@ -1,4 +1,4 @@
-"""Design tokens: colour, type, spacing. One place, used everywhere."""
+"""Design tokens: color, type, spacing. One place, used everywhere."""
 from PySide6.QtGui import QColor, QFont
 
 # Night library: deep ink chrome, warm gold accent (matches the icon).

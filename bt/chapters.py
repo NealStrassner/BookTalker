@@ -24,9 +24,11 @@ SMALL = {"a", "an", "and", "as", "at", "but", "by", "for", "in", "of", "on", "or
          "from", "into", "de", "del", "la", "las", "los", "el", "y", "e", "et", "le", "les", "du", "des",
          "der", "die", "das", "und", "von", "zu", "di", "da", "il", "lo"}
 NUM_WORDS = ("one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|"
-             "sixteen|seventeen|eighteen|nineteen|twenty|uno|dos|tres|cuatro|cinco|un|deux|trois|eins|zwei|drei")
-NUMBERED = re.compile(r"^(?P<word>chapter|chap\.?|part|book|section|cap[ií]tulo|parte|libro|chapitre|partie|"
-                      r"livre|kapitel|teil|buch|capitolo|глава|часть|книга)\s+(?P<num>\d{1,3}|[ivxlcdm]{1,7}|"
+             "sixteen|seventeen|eighteen|nineteen|twenty|uno|dos|tres|cuatro|cinco|un|deux|trois|eins|zwei|drei|"
+             "primero|primera|primeiro|primo|premier|première|erstes")
+NUMBERED = re.compile(r"^(?P<word>chapter|chap\.?|part|book|section|lesson|cap[ií]tulo|parte|libro|lecci[oó]n|"
+                      r"chapitre|partie|livre|le[cç]on|kapitel|teil|buch|lektion|capitolo|lezione|li[cç][aã]o|"
+                      r"глава|часть|книга|урок)\s+(?P<num>\d{1,3}|[ivxlcdm]{1,7}|"
                       + NUM_WORDS + r")\b[\s:.\-–—]*(?P<rest>.*)$", re.I)
 CONTENTS_TITLE = re.compile(r"^\s*(table\s+of\s+)?contents?\s*$|^\s*(í|i)ndice( general)?\s*$|^\s*sommaire\s*$|"
                             r"^\s*table des mati[eè]res\s*$|^\s*inhalt(sverzeichnis)?\s*$|^\s*indice\s*$|"
@@ -126,8 +128,10 @@ def nice_title(text, lang="en"):
         rest = _unquote(_title_case(m.group("rest").strip(" .:-–—")))
         rest = rest[:1].upper() + rest[1:]
         return f"{word} {num} — {rest}" if rest else f"{word} {num}"
-    m = re.match(r"^(?P<num>[IVXLCDM]{1,6})[.):\s]+(?P<rest>[^\W\d_].*)$", t)    # 'III the Planet Venus'
-    if m and ROMAN.match(m.group("num")):
+    # 'III the Planet Venus', 'I. A Scandal in Bohemia', 'I — Down the Rabbit-Hole' (never 'I hope …',
+    # where a lone I is a word)
+    m = re.match(r"^(?P<num>[IVXLCDM]{1,6})(?P<sep>[.):—–-][.):\s—–-]*|\s+)(?P<rest>[^\W\d_].*)$", t)
+    if m and ROMAN.match(m.group("num")) and (len(m.group("num")) > 1 or m.group("sep").strip()):
         rest = _title_case(m.group("rest"))
         return f"{m.group('num')} — {rest[:1].upper() + rest[1:]}"
     return t[:1].upper() + t[1:] if t[:1].islower() else t
@@ -136,8 +140,9 @@ def nice_title(text, lang="en"):
 # ---- 1. the book's own outline -------------------------------------------------------------
 def _junk(titles):
     stems = [re.sub(r"[\s_\-]*\d+$", "", t).strip().casefold() for t in titles]
-    if len(titles) >= 2 and len(set(stems)) == 1 and all(re.search(r"\d$", t) for t in titles):
-        return True                                         # 'Ray Stoner1', 'Ray Stoner2' …
+    if len(titles) >= 2 and len(set(stems)) == 1 and all(re.search(r"\d$", t) for t in titles) \
+            and not all(NUMBERED.match(fix_spacing(t)) for t in titles):
+        return True                                         # 'Ray Stoner1', 'Ray Stoner2' … (not 'Chapter 1' …)
     if sum(bool(re.search(r"\.(pdf|docx?|qxd|indd|html?)$|^\d+_\d{6,}", t, re.I)) for t in titles) > len(titles) / 2:
         return True                                         # file names
     return all(re.fullmatch(r"(?i)(page|part|section|bookmark|untitled|cover)?[\s_\-]*\d*", t.strip()) for t in titles)
@@ -157,6 +162,97 @@ def from_outline(rows, page_count):
     out = [e for e in out if not re.search(r"\.(pdf|docx?|qxd|indd|html?)$", e[1], re.I)
            and not re.fullmatch(r"(?i)\s*(cover|front cover|back cover|title( page)?|copyright( page)?|half title)\s*", e[1])]
     return out if len(out) >= 2 else []
+
+
+BARE = re.compile(r"^\s*([IVXLCDM]{1,7}|\d{1,3})\.?\s*$", re.I)
+
+
+def _caps(t):
+    letters = [c for c in t if c.isalpha()]
+    return bool(letters) and sum(c.isupper() for c in letters) / len(letters) >= 0.8
+
+
+def _name_under(d, title, y, text=""):
+    """The name printed under a chapter the outline gives only a number ('III' -> 'OÙ S'ENGAGE UNE
+    CONVERSATION…'): in the page's own text, the capitals lines right after the number; else, from
+    the prepared page (scans), the heading after the number or the page's first heading below where
+    the chapter starts. '' when the page shows none."""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    for i, l in enumerate(lines):
+        if _norm(l) == _norm(title):
+            name = []
+            for nxt in lines[i + 1:]:                     # (a number or 'CHAPTER I' below is not its name)
+                if not _caps(nxt) or len(" ".join(name + [nxt])) > 150 or _is_number(nxt):
+                    break
+                name.append(nxt)
+            if name:
+                return " ".join(name)
+            break
+    blocks = [b for b in d.get("blocks", []) if b["words"]]
+    texts = [" ".join(w[4] for w in b["words"]).strip() for b in blocks]
+
+    def heading(b, t):
+        return 0 < len(t) <= 150 and not _norm(t) == _norm(title) and (b["label"] == "SectionHeader" or _caps(t))
+    for i, t in enumerate(texts):
+        if _norm(t) == _norm(title):
+            return texts[i + 1] if i + 1 < len(texts) and heading(blocks[i + 1], texts[i + 1]) else ""
+    for b, t in zip(blocks, texts):
+        if b["label"] == "SectionHeader" and min(w[1] for w in b["words"]) >= y - 5:
+            return t if heading(b, t) else ""
+    return ""
+
+
+def _is_number(t):
+    """'III', '3.', 'CHAPTER II' — a chapter's number with no name."""
+    m = NUMBERED.match(fix_spacing(t))
+    return bool(BARE.match(t) or (m and not m.group("rest").strip()))
+
+
+def numbered_tail(text):
+    """'I hope Mr. Bingley will like it. CHAPTER II.' -> 'CHAPTER II.': the chapter's own words when
+    a picture's caption or the page's running title was read together with them; else the text."""
+    if not NUMBERED.match(fix_spacing(text)):
+        for cut in re.finditer(r"[.:!?]\s+", text):
+            if NUMBERED.match(fix_spacing(text[cut.end():])):
+                return text[cut.end():]
+    return text
+
+
+def _named_outline(chs, pages, page_text):
+    """Outline entries that are only a number ('I', 'Chapter 3') take their name: from the entry
+    under them ('Chapitre I' + 'Monsieur Myriel'), else, for top-level entries, from what their page
+    prints under the number (a story's numbered sections stay numbers). An entry that then repeats
+    the next one's name (a pointer to the contents page) goes."""
+    chs = [(lvl, numbered_tail(title), page, y) for lvl, title, page, y in chs]
+    top = min((lvl for lvl, *_ in chs), default=1)
+    out, skip = [], set()
+    for i, (lvl, title, page, y) in enumerate(chs):
+        if i in skip:
+            continue
+        nxt = chs[i + 1] if i + 1 < len(chs) else None
+        if _is_number(title) and nxt and nxt[0] > lvl and nxt[2] == page and not _is_number(nxt[1]) \
+                and not NUMBERED.match(fix_spacing(nxt[1])):
+            out.append((lvl, f"{title.strip().rstrip('.')} — {nxt[1]}", page, y))
+            skip.add(i + 1)
+            continue
+        if _is_number(title) and lvl == top and page in pages:
+            text = ""
+            for q in (page, page + 1):                    # (a name can run on over the page break)
+                try:
+                    text += (page_text(q) if page_text else "") + "\n"
+                except Exception:
+                    pass
+            name = _name_under(pages[page], title, y, text)
+            if name:
+                title = f"{title.strip().rstrip('.')} — {name}"
+        out.append((lvl, title, page, y))
+    return [c for i, c in enumerate(out)
+            if not (i + 1 < len(out) and _norm(_strip_num(c[1]))
+                    and _norm(_strip_num(c[1])) == _norm(_strip_num(out[i + 1][1])))]
+
+
+def _strip_num(t):
+    return re.sub(r"^\s*([IVXLCDM]{1,7}|\d{1,3})\b[\s.:\-–—]*", "", t, flags=re.I)
 
 
 # ---- page text helpers -----------------------------------------------------------------------
@@ -401,6 +497,7 @@ def from_headings(pages):
             text = h["text"]
             if len(text) > 100 or not re.search(r"\w", text) or CONTENTS_LINE.search(text) or JUNK_HEAD.search(text):
                 continue
+            text = numbered_tail(text)                       # "McGUFFEY'S FIRST READER. LESSON I."
             m = NUMBERED.match(fix_spacing(text))
             if m and not m.group("rest").strip():             # 'Chapter 3' alone: find its name
                 above = hs[k - 1] if k and h["top"] - hs[k - 1]["bottom"] < 4 * h["size"] else None
@@ -479,8 +576,9 @@ def _named_from_list(chs, items):
 
 
 # ---- choosing ----------------------------------------------------------------------------------
-def work_out(outline_rows, pages, labels, page_count, lang="en"):
-    """-> [(level, nice title, page, y)]: the best source, tidied; [] for a book without chapters."""
+def work_out(outline_rows, pages, labels, page_count, lang="en", page_text=None):
+    """-> [(level, nice title, page, y)]: the best source, tidied; [] for a book without chapters.
+    page_text(page) -> the text the PDF itself carries on that page (none for scans)."""
     for name, source in (("outline", lambda: from_outline(outline_rows, page_count)),
                          ("contents", lambda: from_contents(pages, labels, page_count, lang)),
                          ("headings", lambda: from_headings(pages))):
@@ -492,9 +590,12 @@ def work_out(outline_rows, pages, labels, page_count, lang="en"):
             break
     else:
         return []
+    if name == "outline":
+        chs = _named_outline(chs, pages, page_text)
     if name == "headings":
         items = _front_list(pages, page_count)
-        if items:
+        numbered = sum(1 for c in chs if NUMBERED.match(fix_spacing(c[1])))
+        if items and 2 * len(items) >= numbered:          # a list of the chapters, not a few numbered points
             chs = _named_from_list(chs, items)
     out, prev = [], None
     for lvl, title, page, y in chs:

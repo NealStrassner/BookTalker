@@ -7,12 +7,12 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QSize, QStandardPaths, Qt, QTimer, Signal
 from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QIcon, QKeySequence, QPainter,
                            QPen, QPixmap)
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMenu,
-                               QLineEdit, QMessageBox, QScrollArea, QStackedWidget, QToolButton, QVBoxLayout,
-                               QWidget)
+                               QLineEdit, QMessageBox, QScrollArea, QSizePolicy, QStackedWidget, QToolButton,
+                               QVBoxLayout, QWidget)
 
 from . import convert, packs, voices
 from .book import Book
@@ -26,8 +26,8 @@ from .ui.about import AboutDialog, Notice
 from .ui.tools import BookmarksDialog, ExportDialog
 from .ui.voicepicker import DownloadPrompt, VoicePicker
 from .ui.welcome import Welcome
-from .ui.widgets import (Canvas, Divider, FloatingBar, IconButton, LoadingCard, PageBox, PageCanvas, PlayButton,
-                         Scrubber, Spinner, Toast)
+from .ui.widgets import (TIME_ROLE, Canvas, ChapterItems, Divider, ElidedBox, FloatingBar, IconButton, LoadingCard,
+                         PageBox, PageCanvas, PlayButton, Scrubber, Spinner, Toast)
 
 SPEEDS = (0.75, 0.9, 1.0, 1.15, 1.3, 1.5, 1.75)
 TARGETS = ("en", "es", "fr", "de", "it", "pt", "ru", "zh")     # languages books can be translated into
@@ -267,7 +267,7 @@ class Stage(Canvas):
         self.toast.adjustSize()
         self.toast.move((self.width() - self.toast.width()) // 2, 18)
         if hasattr(self, "loading"):
-            self.loading.setGeometry(self.rect())       # veil covers the page; card centred
+            self.loading.setGeometry(self.rect())       # veil covers the page; card centered
 
     def show_subtitle(self, html_text):
         if self.sub_text.text() != html_text:
@@ -383,7 +383,25 @@ class Main(QMainWindow):
         self.sub_lbl.setStyleSheet(f"color: {T.TEXT_2};")
         # pages still being prepared: a spinning ring and a bright count, so a stutter isn't a surprise
         titles.addWidget(self.title_lbl)
-        titles.addWidget(self.sub_lbl)
+        sub = QHBoxLayout()
+        sub.setSpacing(0)
+        sub.addWidget(self.sub_lbl)
+        # listening time of this chapter (click: of the whole book), at the reading speed
+        self.time_btn = QToolButton()
+        self.time_btn.setFont(T.font(12))
+        self.time_btn.setCursor(Qt.PointingHandCursor)
+        self.time_btn.setFocusPolicy(Qt.TabFocus)
+        self.time_btn.setStyleSheet(f"QToolButton {{ border: none; padding: 0; color: {T.TEXT_2}; }}"
+                                    f" QToolButton:hover {{ color: {T.GOLD}; }}"
+                                    f" QToolButton:focus {{ color: {T.GOLD}; }}")
+        self.time_btn.clicked.connect(self._toggle_time_scope)
+        self.time_btn.hide()
+        # the page line keeps its room; the time takes what is left (fitted in _show_time)
+        self.sub_lbl.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        sub.addWidget(self.time_btn)
+        sub.addStretch()
+        titles.addLayout(sub)
+        self._titles = titles
         row.addLayout(titles, 1)
         # while pages are prepared: a spinning ring and the count; then chapters + search take its place
         self.prep_box = QWidget()
@@ -409,7 +427,7 @@ class Main(QMainWindow):
         self.prep_box.setVisible(False)
         row.addWidget(self.prep_box)
         # chapters of the book (its own contents, else headings found on the pages)
-        self.chapter_box = QComboBox()
+        self.chapter_box = ElidedBox()
         self.chapter_box.setFont(T.font(13))
         self.chapter_box.setFixedWidth(175)
         self.chapter_box.setMaxVisibleItems(20)
@@ -424,6 +442,11 @@ class Main(QMainWindow):
         self.chapter_box.setPlaceholderText(tr("Chapters"))
         self.chapter_box.activated.connect(self._chapter_chosen)
         self._chapters = []
+        self._listen = None                         # (book, code mode, listening index) — see _listen_index
+        self._paces = dict(self.settings.get("voice_pace", {}))   # 'voice@speed' -> seconds a letter, as measured
+        self._time_scope = self.settings.get("time_scope", "chapter")   # what the time shows: chapter | book
+        self._timed = None                          # the sentence the time was last worked out for
+        self.chapter_box.view().setItemDelegate(ChapterItems(self.chapter_box))
         self._title_cache = {}                      # (book, language) -> translated chapter titles
         self._book_title_tr = {}                    # (book, language) -> the book's title translated
         row.addWidget(self.chapter_box)
@@ -769,6 +792,7 @@ class Main(QMainWindow):
         super().resizeEvent(e)
         if self.zoom is None:
             QTimer.singleShot(0, self._render)
+        QTimer.singleShot(0, self._show_time)          # (the listening time fitted to the new width)
 
     def _render(self, force=False):
         if self.book is None:
@@ -822,6 +846,7 @@ class Main(QMainWindow):
             mode = tr("Detecting language…")
         # (left-to-right mark first: a Hebrew/Arabic language name would flip the whole line)
         self.sub_lbl.setText("‎" + f"{mode}  ·  " + tr("Page {page} of {pages}", page=self.page + 1, pages=n))
+        self._show_time()
         self._show_title()
         self.scrubber.set_state(n, self.page, self.book.cache.pages.keys())
         self._sync_chapter()
@@ -961,10 +986,16 @@ class Main(QMainWindow):
         if chapters and self.translate and self.book.lang != self.target:
             book, target = self.book, self.target
             if self._title_cache.get((id(book), target)) is None:
+                author = ((book.doc.metadata or {}).get("author") or "").strip()
+                about = f'"{book_title(book)}"' + (f" by {author}" if author else "")   # (names stay names)
+
                 def work():
-                    from .llm import titles_in_steps
+                    from .llm import book_names, titles_in_steps
+                    with book.lock:
+                        sents = [s for page in book.page_sents.values() for s in page]
                     titles_in_steps(self.models.translator, [c[1] for c in chapters], book.lang, book.nllb, target,
-                                    lambda out: self.sig.titles_ready.emit((book, target, out)))
+                                    lambda out: self.sig.titles_ready.emit((book, target, out)), about=about,
+                                    names=book_names(sents))
                 threading.Thread(target=work, daemon=True).start()
 
     def _translate_book_title(self):
@@ -979,12 +1010,12 @@ class Main(QMainWindow):
         def work():
             from .llm import titles_in_steps
             titles_in_steps(self.models.translator, [book_title(book)], book.lang, book.nllb, target,
-                            lambda out: out[0] and self.sig.book_title_ready.emit((book, target, out[0])))
+                            lambda out: out[0] and self.sig.book_title_ready.emit((book, target, out[0])), book=True)
         threading.Thread(target=work, daemon=True).start()
 
     def _show_title(self):
         """The book's title; when read in translation, the translated title beside it in brackets,
-        smaller and grey (the original is never replaced)."""
+        smaller and gray (the original is never replaced)."""
         title = book_title(self.book)
         shown = self._book_title_tr.get((id(self.book), self.target)) if self.translate else None
         fm = QFontMetrics(self.title_lbl.font())
@@ -1025,6 +1056,7 @@ class Main(QMainWindow):
             box.setItemData(box.count() - 1, tip if shown == title else f"{title}\n{tip}", Qt.ToolTipRole)
         box.blockSignals(False)
         self._sync_chapter()
+        self._label_chapter_times()
 
     def _titles_ready(self, msg):
         book, target, titles = msg
@@ -1034,7 +1066,8 @@ class Main(QMainWindow):
 
     def _sync_chapter(self):
         """Show the chapter the page on screen belongs to."""
-        if not self._chapters or self.chapter_box.view().isVisible():
+        # (not while the reader looks through the list, unless it was just refilled and shows none)
+        if not self._chapters or (self.chapter_box.view().isVisible() and self.chapter_box.currentIndex() >= 0):
             return
         i = max((k for k, c in enumerate(self._chapters) if c[2] <= self.page), default=-1)   # -1: before chapter 1
         if self.chapter_box.currentIndex() != i:
@@ -1176,7 +1209,12 @@ class Main(QMainWindow):
 
     def _open_dialog(self):
         filt = convert.OPEN_FILTER.replace("Readable files", tr("Readable files")).replace("All files", tr("All files"))
-        path, _ = QFileDialog.getOpenFileName(self, tr("Open a book or document"), "", filt)
+        # the latest book's folder, else Documents (not the folder BookTalker was started in:
+        # from the Microsoft Store that is Windows' own System32)
+        folders = [os.path.dirname(r["path"]) for r in self.settings.get("recents", []) if r.get("path")]
+        start = next((d for d in folders if os.path.isdir(d)), None) or \
+            QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        path, _ = QFileDialog.getOpenFileName(self, tr("Open a book or document"), start, filt)
         if path:
             self.open(path)
 
@@ -1450,6 +1488,133 @@ class Main(QMainWindow):
             page, y = s.words[0].rects[0][0], s.words[0].rects[0][2]
         return max((k for k, c in enumerate(self._chapters or []) if (c[2], c[3]) <= (page, y + 3)), default=-1)
 
+    # ---- listening time ------------------------------------------------------------
+    # Speech is made a few sentences ahead, so how long the rest takes isn't known exactly: it
+    # is the letters to come times the voice's pace at the reading speed (measured as it reads,
+    # bt/player.py), plus the pauses between sentences.
+    PACE = 0.068            # seconds a letter at 1× before a voice is measured (MEASURED: Alba 0.066,
+                            # Ryan 0.063, Thorsten 0.077)
+    SPEED_POWER = 0.6       # MEASURED: 1.3× is only 1.3^0.6 ≈ 1.17× quicker (pauses don't speed up)
+
+    def _listen_index(self):
+        """Once every page is prepared: (places, letters, pauses) — each sentence's (page, y) in
+        reading order and the letters and pause seconds before it (one more entry: the end).
+        None before that."""
+        b = self.book
+        if not b or not b.prepared():
+            return None
+        if self._listen and self._listen[0] is b and self._listen[1] == b.code_mode:
+            return self._listen[2]
+        with b.lock:
+            pages = dict(b.page_sents)
+        places, letters, pauses = [], [0], [0.0]
+        for p in range(b.page_count):
+            for s in pages.get(p, ()):
+                y = s.words[0].rects[0][2] if s.words and s.words[0].rects else 0
+                if b.end_at and (p, y) >= b.end_at:            # a Project Gutenberg license: not read
+                    break
+                places.append((p, y))
+                letters.append(letters[-1] + sum(c.isalpha() for w in s.words for c in w.say))
+                pauses.append(pauses[-1] + s.pause)
+        self._listen = (b, b.code_mode, (places, letters, pauses))
+        return self._listen[2]
+
+    def _pace(self):
+        """Seconds a letter for this voice at this speed: as measured; else worked out from the
+        same voice at another speed; else a typical voice's."""
+        key = f"{self.voice}@{self.speed:g}"
+        if self.player and self.player.pace and self.player.speed == self.speed and self.player.voice == self.voice:
+            self._paces[key] = round(self.player.pace, 5)
+        if key in self._paces:
+            return self._paces[key]
+        known = [(float(k.rsplit("@", 1)[1]), p) for k, p in self._paces.items() if k.rsplit("@", 1)[0] == self.voice]
+        s, p = min(known, key=lambda x: abs(x[0] - self.speed)) if known else (1.0, self.PACE)
+        return p * (s / self.speed) ** self.SPEED_POWER
+
+    def _listen_seconds(self, idx, a, b):
+        """Listening time from sentence a to sentence b (indexes into the listening index)."""
+        _places, letters, pauses = idx
+        return (letters[b] - letters[a]) * self._pace() + pauses[b] - pauses[a]
+
+    def _chapter_span(self, idx, k):
+        """-> (first, end) sentence indexes of chapter k (k = -1: what comes before chapter 1)."""
+        import bisect
+        places = idx[0]
+        start = lambda c: bisect.bisect_left(places, (c[2], c[3] - 3))
+        a = start(self._chapters[k]) if k >= 0 else 0
+        b = start(self._chapters[k + 1]) if k + 1 < len(self._chapters) else len(places)
+        return a, b
+
+    @staticmethod
+    def _duration(secs, unit=True):
+        """'18 min', '1 h 05', '<1 min'; without the unit: '18'."""
+        mins = max(0, round(secs / 60))
+        if mins == 0 and unit and secs > 0:
+            return tr("<1 min")
+        if mins < 60:
+            return tr("{n} min", n=mins) if unit else str(mins)
+        return tr("{h} h {m}", h=mins // 60, m=f"{mins % 60:02d}")
+
+    def _show_time(self):
+        """The listening time beside the page number: how far into this chapter, out of all of
+        it (click: of the whole book)."""
+        idx = self._listen_index()
+        if idx is None or not idx[0]:
+            self.time_btn.hide()
+            return
+        import bisect
+        s = playing = self.player.state()[0] if self.player else None
+        if s is None:                                   # not reading: where Play carries on from
+            key = (self.player.current_key() if self.player else None) or self.resume_key
+            s = self.book.get(key) if key else None
+        if hasattr(s, "words") and s.words and s.words[0].rects:
+            here = (s.words[0].rects[0][0], s.words[0].rects[0][2])
+        else:
+            here = (self.page, 0)
+        now = min(bisect.bisect_left(idx[0], here), len(idx[0]))
+        k = max((i for i, c in enumerate(self._chapters or []) if (c[2], c[3]) <= (here[0], here[1] + 3)), default=-1)
+        if self._time_scope == "chapter" and k >= 0:
+            a, b = self._chapter_span(idx, k)
+            fmt = "{done} / {total} in chapter"
+            tip = "Listening time at this speed. Click for the whole book."
+        else:
+            a, b = 0, len(idx[0])
+            fmt = "{done} / {total} in book"
+            tip = "Listening time at this speed. Click for this chapter." if self._chapters else \
+                  "Listening time at this speed."
+        done = self._listen_seconds(idx, a, max(a, min(now, b)))
+        if playing is not None and a <= now < b:        # and as far into this sentence as it has got
+            done += min(self.player.seconds_into_current(), self._listen_seconds(idx, now, now + 1))
+        total = self._listen_seconds(idx, a, b)
+        short = total < 3600 and done < 3600
+        span = f"{self._duration(done, unit=not short)} / {self._duration(total)}"
+        text = tr(fmt, done=self._duration(done, unit=not short), total=self._duration(total))
+        # in a narrow window: the time without its words, else nothing (the tooltip has it all)
+        room = self._titles.geometry().width() - self.sub_lbl.sizeHint().width()
+        fm = self.time_btn.fontMetrics()
+        shown = next((t for t in ("  ·  " + text, "  ·  " + span) if fm.horizontalAdvance(t) + 6 <= room), "")
+        self.time_btn.setText(shown)
+        self.time_btn.setFixedWidth(fm.horizontalAdvance(shown) + 8 if shown else 0)   # right after the page
+        self.time_btn.setToolTip(text + "\n" + tr(tip))
+        self.time_btn.setAccessibleName(text)
+        self.time_btn.setVisible(bool(shown))
+
+    def _toggle_time_scope(self):
+        self._time_scope = "book" if self._time_scope == "chapter" else "chapter"
+        self.settings["time_scope"] = self._time_scope
+        save_settings(self.settings)
+        self._show_time()
+
+    def _label_chapter_times(self):
+        """Each chapter's listening time at the right of the chapter list."""
+        idx = self._listen_index()
+        box = self.chapter_box
+        if idx is None or box.count() != len(self._chapters or []):
+            return
+        for k in range(box.count()):
+            a, b = self._chapter_span(idx, k)
+            box.setItemData(k, self._duration(self._listen_seconds(idx, a, b)) if b > a else None, TIME_ROLE)
+
     def _set_sleep(self, sleep):
         self._sleep = sleep
         self._sleep_last = time.time()
@@ -1539,8 +1704,8 @@ class Main(QMainWindow):
             return
         note = ""
         if with_note:
-            from PySide6.QtWidgets import QInputDialog
-            note, ok = QInputDialog.getMultiLineText(self, tr("Note"), tr("Your note for this place:"))
+            from .ui.tools import NoteDialog
+            note, ok = NoteDialog.ask(self)
             if not ok:
                 return
         text = " ".join(w.text for w in s.words[:12]) + ("…" if len(s.words) > 12 else "")
@@ -1610,20 +1775,22 @@ class Main(QMainWindow):
             QApplication.setOverrideCursor(Qt.WaitCursor)
             try:
                 names = translate_titles(self.models.translator, [job["title"], job["author"] or "-"],
-                                         self.book.lang, self.book.nllb, self.target)
+                                         self.book.lang, self.book.nllb, self.target, book=True)
             finally:
                 QApplication.restoreOverrideCursor()
             if names:
                 job["title"] = names[0] or job["title"]
                 if job["author"]:
                     job["author"] = names[1] if names[1] not in ("-", "") else job["author"]
-        dlg = ExportDialog(self, job, titles, reading, self.settings.get("audiobook_folder"))
+        dlg = ExportDialog(self, job, titles, reading, self.settings.get("audiobook_folder"),
+                           self.settings.get("audiobook_playlist"))
         dlg.finished.connect(lambda _r: self._remember_export_folder(dlg))
         dlg.show()
         self._export_dlg = dlg                      # (kept while it records)
 
     def _remember_export_folder(self, dlg):
         self.settings["audiobook_folder"] = dlg.folder.text().strip()
+        self.settings["audiobook_playlist"] = dlg.playlist()
         save_settings(self.settings)
 
     def _set_code_mode(self, mode):
@@ -1641,7 +1808,7 @@ class Main(QMainWindow):
             gb = packs.AI_SIZE_MB / 1000
             ok = QMessageBox.question(
                 self, tr("Download the AI translator?"),
-                tr("Best-quality translation uses Qwen3-4B (by Alibaba, free Apache licence) running on this computer. "
+                tr("Best-quality translation uses Qwen3-4B (by Alibaba, free Apache license) running on this computer. "
                    "It is a one-time download of about {size} GB from Hugging Face, plus the llama.cpp engine from GitHub."
                    "\n\nDownload it now?", size=f"{gb:.1f}"))
             if ok != QMessageBox.Yes:
@@ -1787,6 +1954,8 @@ class Main(QMainWindow):
         for r in self.settings.get("recents", []):
             if r.get("path") == os.path.abspath(self.book.source):
                 r["page"] = key[0]
+        self._pace()                                            # (picks up the latest measurement)
+        self.settings["voice_pace"] = self._paces               # the next book's times start right
         save_settings(self.settings)
 
     def _voice_ready(self):
@@ -1950,6 +2119,8 @@ class Main(QMainWindow):
             a.setChecked(s == v)
         if self.player:
             self.player.set_speed(v)
+        self._show_time()
+        self._label_chapter_times()
 
     def _tick(self):
         alt = self.models.failed.get(self.voice)
@@ -1963,6 +2134,13 @@ class Main(QMainWindow):
         if not self.player:
             return
         self.play_btn.set_playing(not self.player.paused)
+        now = time.time()
+        if now - getattr(self, "_time_at", 0) >= 1:          # the listening time, once a second
+            self._time_at = now
+            self._show_time()
+            if now - getattr(self, "_times_at", 0) >= 20 and not self.chapter_box.view().isVisible():
+                self._times_at = now                           # chapter times as the voice's pace settles
+                self._label_chapter_times()
         sentence, idx, spoken = self.player.state()
         if sentence is None:
             self.stage.page.set_highlight([], [])
@@ -2048,6 +2226,6 @@ def run(path=None):
             tr("BookTalker update"), tr("BookTalker was updated to version {v}." if state == "done" else
                                         "The update to version {v} did not finish. Try again from About.", v=version),
             tr("Close"), parent=w).exec())
-    else:
+    elif not update.store_app():        # (the Microsoft Store updates its own copy)
         w.check_for_update()
     return app.exec()

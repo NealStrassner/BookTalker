@@ -14,8 +14,9 @@ from .translate import detect_book_language, detect_language, nllb_code
 WINDOW = 3      # pages of context on each side when reflowing a page
 CJK = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")   # Chinese/Japanese (Korean words are matched whole)
 # headings that are numbered divisions of a book: 'Chapter 2', 'Part One', 'Capítulo II', '第三章'
-DIVISION = re.compile(r"^(chapter|chap\.|part|book|cap[ií]tulo|parte|libro|chapitre|partie|livre|kapitel|teil|buch|"
-                      r"capitolo|глава|часть|книга)\b|^第.{1,6}[章回节節部篇卷]", re.I)
+DIVISION = re.compile(r"^(chapter|chap\.|part|book|lesson|cap[ií]tulo|parte|libro|lecci[oó]n|chapitre|partie|livre|"
+                      r"le[cç]on|kapitel|teil|buch|lektion|capitolo|lezione|li[cç][aã]o|глава|часть|книга|урок)\b|"
+                      r"^第.{1,6}[章回节節部篇卷]", re.I)
 # front and back matter: kept as chapters, but never the sign of a chaptered book on their own
 MATTER = re.compile(r"^(prologue|epilogue|introduction|preface|foreword|afterword|appendix|conclusion|"
                     r"pr[oó]logo|ep[ií]logo|introducci[oó]n|prefacio|ap[eé]ndice|conclusi[oó]n|avant-propos|"
@@ -23,6 +24,8 @@ MATTER = re.compile(r"^(prologue|epilogue|introduction|preface|foreword|afterwor
                     r"пролог|эпилог|заключение)\b", re.I)
 CHAPTER_WORD = re.compile(DIVISION.pattern + "|" + MATTER.pattern, re.I)
 CONTENTS_LINE = re.compile(r"(\.{2,}|…)\s*\d+\s*$|\.{6,}")     # 'CHAPTER 3 ........ 59'
+# the English license a Project Gutenberg e-book ends with: not a chapter of the book
+LICENSE = re.compile(r"\bproject\s+gutenberg\W{0,3}\s*licen[cs]e\b", re.I)
 
 
 
@@ -62,8 +65,9 @@ class Book:
         # A scanned book has no text to detect the language from until OCR has run.
         self.lang_pending = len("".join(texts).strip()) < 200
         self.cache = LayoutCache(path, self.page_count)
-        self._search_index = {}                # page -> (normalised words, rects)
+        self._search_index = {}                # page -> (normalized words, rects)
         self._toc = None
+        self.end_at = None                     # (page, y) where a Project Gutenberg license begins
         self.lock = threading.Lock()
         self.page_sents = {}                   # page -> [Sentence] (published)
         self.code_mode = code_mode             # computer code: explain | verbatim | skip (bt/code.py)
@@ -137,7 +141,7 @@ class Book:
         for p in sorted(pages):
             if (p not in known or not (p + 1 in known or p + 1 >= self.page_count)
                     or not (p - 1 in known or p == 0)):
-                continue    # publish a page once both neighbours are known (run-on text)
+                continue    # publish a page once both neighbors are known (run-on text)
             # the contiguous stretch of known pages around p
             run = [p]
             for q in range(p - 1, p - WINDOW - 1, -1):
@@ -303,7 +307,13 @@ class Book:
             outline = self.doc.get_toc(simple=False)
         except Exception:
             outline = []
-        self._toc = work_out(outline, pages, labels, self.page_count, self.lang)
+        toc = work_out(outline, pages, labels, self.page_count, self.lang,
+                       page_text=lambda p: self.doc[p].get_text())
+        cut = next((i for i, c in enumerate(toc) if i and LICENSE.search(c[1])), None)
+        if cut is not None:                    # the license and anything after it are left out
+            self.end_at = (toc[cut][2], toc[cut][3])
+            toc = toc[:cut]
+        self._toc = toc
         return self._toc
 
     def first_sentence_from(self, page, y):

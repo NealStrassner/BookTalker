@@ -11,8 +11,9 @@ from . import theme as T
 from .i18n import tr
 from .widgets import IconButton, PillButton, soft_shadow
 
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 AUTHOR = "Neal Strassner"
+KOFI = "https://ko-fi.com/nealstrassner"         # tips for the author (BookTalker itself stays free)
 SHORTCUTS = [("Space", "Play / pause"), ("← →", "Previous / next sentence"),
              ("Shift ← →", "Back / forward 30 s"), ("[  ]", "Slower / faster"),
              ("Click a word", "Read from there"), ("PgUp PgDn", "Turn the page"),
@@ -69,13 +70,13 @@ def _gold_links(doc):
         block = block.next()
 
 
-class LicenceDialog(QDialog):
-    """BookTalker's licence (AGPL-3.0) and the third-party notices, shown in the app."""
+class LicenseDialog(QDialog):
+    """BookTalker's license (AGPL-3.0) and the third-party notices, shown in the app."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         from PySide6.QtWidgets import QTabWidget, QTextBrowser
-        self.setWindowTitle(tr("Credits & licences"))
+        self.setWindowTitle(tr("Credits & licenses"))
         self.resize(820, 640)
         self.setStyleSheet(f"QDialog {{ background: {T.INK_2}; }} QTextBrowser {{ background: {T.INK_1}; color: {T.TEXT};"
                            f" border: 1px solid {T.LINE}; border-radius: 8px; padding: 10px; font-size: 13px; }}"
@@ -88,7 +89,7 @@ class LicenceDialog(QDialog):
             view = QTextBrowser()
             view.setOpenExternalLinks(True)
             pal = view.palette()
-            pal.setColor(pal.ColorRole.Link, QColor(T.GOLD))     # (Markdown links take the palette's colour)
+            pal.setColor(pal.ColorRole.Link, QColor(T.GOLD))     # (Markdown links take the palette's color)
             view.setPalette(pal)
             try:
                 text = open(resource(name), encoding="utf-8").read()
@@ -213,7 +214,10 @@ class AboutDialog(QDialog):
         repo = f"https://github.com/{REPO}"
         link = f"color: {T.TEXT}; text-decoration: underline;"
         web = QLabel(f"<a href='{repo}/releases' style='{link}'>{tr('What’s new')}</a>"
-                     f"  ·  <a href='{repo}' style='{link}'>github.com/{REPO}</a>")
+                     f"  ·  <a href='{repo}' style='{link}'>github.com/{REPO}</a>"
+                     f"  ·  <a href='{KOFI}' style='color: {T.GOLD}; text-decoration: underline;'>"
+                     f"{tr('Buy me a coffee')}</a>")
+        web.setToolTip(KOFI.replace("https://", ""))
         web.setTextFormat(Qt.RichText)
         web.setOpenExternalLinks(True)
         web.setFont(T.font(12))
@@ -267,12 +271,15 @@ class AboutDialog(QDialog):
         lay.addWidget(self.update_note)
         lay.addSpacing(6)
         row = QHBoxLayout()
-        lic = PillButton(tr("Credits & licences").replace("&", "&&"))   # (a single & marks a shortcut key)
-        lic.clicked.connect(lambda: LicenceDialog(self).exec())
+        lic = PillButton(tr("Credits & licenses").replace("&", "&&"))   # (a single & marks a shortcut key)
+        lic.clicked.connect(lambda: LicenseDialog(self).exec())
         row.addWidget(lic)
         self.update_btn = PillButton(tr("Check for updates"))
         self.update_btn.clicked.connect(self._update_clicked)
         row.addWidget(self.update_btn)
+        from .. import update
+        if update.store_app():                        # (the Microsoft Store updates it)
+            self.update_btn.hide()
         row.addStretch()
         ok = PillButton(tr("Close"), primary=True)
         ok.clicked.connect(self.accept)
@@ -303,7 +310,7 @@ class AboutDialog(QDialog):
                 try:
                     update.fetch(z, changed, self._sig.progress.emit)
                     if not update.install(offer["version"], update.program_dir(), gone):
-                        raise RuntimeError(tr("Update cancelled."))
+                        raise RuntimeError(tr("Update canceled."))
                     self._sig.fetched.emit("", "")
                 except Exception as e:  # noqa: BLE001 — shown to the reader
                     self._sig.fetched.emit(str(e) or e.__class__.__name__, "")

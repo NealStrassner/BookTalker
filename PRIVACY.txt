@@ -1,0 +1,24 @@
+BookTalker privacy policy
+
+BookTalker collects nothing about you. It has no account, no sign-in, no tracking, no analytics
+and no advertising, and it sends nothing about you or your books anywhere.
+
+Everything BookTalker does with your books happens on your own computer: reading aloud, text
+recognition and translation. Your books, bookmarks, notes and settings stay in your own user
+folder.
+
+BookTalker goes online only for these:
+
+- Downloads you choose. Extra voices and the optional AI translator come straight from their
+  public sources (huggingface.co, github.com, files.pythonhosted.org) when you pick them. Only
+  the files themselves are requested.
+- Update check (the version from GitHub only). When it opens, and when you click About ->
+  Check for updates, BookTalker reads the list of releases on its GitHub page. Nothing about
+  you is sent. The Microsoft Store version makes no update check: the Store updates it.
+
+Those websites receive what any web request carries, such as your IP address, under their own
+privacy policies. BookTalker itself keeps no record of it.
+
+Questions: open an issue at https://github.com/NealStrassner/BookTalker/issues
+
+Last updated: 29 October 2026

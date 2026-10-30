@@ -146,7 +146,7 @@ def detect_book_language(page_texts):
     """-> (language, text of the pages in it): one vote per page with real text, so a front page
     in another language (Google's English notice on a French scan) doesn't decide the book.
     Short pages (a children's book's line or two) are pooled, so a dozen story pages outvote
-    the two long licence pages at the back."""
+    the two long license pages at the back."""
     votes, texts = Counter(), {}
     pages, pool = [], ""
     for t in page_texts:

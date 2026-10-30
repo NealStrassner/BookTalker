@@ -3,7 +3,7 @@
 ; offers "only for me", which needs no administrator and installs into %LOCALAPPDATA%\Programs.
 
 #define AppName "BookTalker"
-#define AppVersion "1.0.5"
+#define AppVersion "1.0.6"
 #define AppExe "BookTalker.exe"
 
 [Setup]
@@ -100,7 +100,7 @@ Type: files; Name: "{app}\{#AppExe}"
 ; %LOCALAPPDATA%\BookTalker; the uninstaller asks whether to remove them too ([Code] below).
 
 [Code]
-// Welcome page: the photo of Grandpa Felix reading to his grandchildren, centred under the
+// Welcome page: the photo of Grandpa Felix reading to his grandchildren, centered under the
 // welcome text, with the dedication beneath it.
 procedure InitializeWizard;
 var

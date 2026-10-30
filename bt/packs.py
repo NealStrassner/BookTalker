@@ -12,7 +12,7 @@ import threading
 import urllib.request
 import zipfile
 
-from .paths import resource
+from .paths import package_family, resource
 
 LLAMA_TAG = "b11404"
 AI_MODEL_FILE = "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
@@ -30,6 +30,11 @@ TRANSLATOR_SIZE_MB = 600
 
 def packs_dir(*parts):
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    if package_family():
+        # the Microsoft Store copy: Windows keeps its AppData in its package's own folder, and a
+        # program started through the redirected path can't find the libraries beside it
+        # (llama-server-impl.dll), so the same files are named by where they really are
+        base = os.path.join(base, "Packages", package_family(), "LocalCache", "Local")
     return os.path.join(base, "BookTalker", "packs", *parts)
 
 
@@ -94,7 +99,7 @@ class Download(threading.Thread):
     def __init__(self, items, on_progress, on_done):
         super().__init__(daemon=True)
         self.items, self.on_progress, self.on_done = items, on_progress, on_done
-        self.cancelled = False
+        self.canceled = False
 
     def run(self):
         ctx = _ssl()
@@ -113,8 +118,8 @@ class Download(threading.Thread):
                        io.BytesIO() if unzip else open(dest + ".part", "wb"))
                 with urllib.request.urlopen(req, context=ctx, timeout=60) as r:
                     while True:
-                        if self.cancelled:
-                            raise RuntimeError("cancelled")
+                        if self.canceled:
+                            raise RuntimeError("canceled")
                         chunk = r.read(1 << 20)
                         if not chunk:
                             break

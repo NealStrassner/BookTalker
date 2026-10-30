@@ -299,30 +299,120 @@ class SmartTranslator:
         self.engine.stop()
 
 
-def translate_titles(smart, titles, lang, src_code, target):
-    """Chapter titles in the language being read. The AI, when it runs, translates them as one
-    list (a title alone has no context: 'Действие первое' is 'Act One', not 'Action one');
-    otherwise the fast translator, in one batch."""
+# a chapter's number at the front of its title: 'XV — Où le sac…', 'XII', '3. Le dragon' (never
+# 'I Remember', where the I is a word)
+LEAD_NUM = re.compile(r"^\s*(?P<num>[IVXLCDM]{1,7}|\d{1,4})(\s*[.:)]\s+|\s*[—–-]\s*|\s*\.?\s*$)")
+# the numbers further on: 'Canto VII', '(1862)', 'Capítulo II' (a lone I only at the end)
+TITLE_NUM = re.compile(r"\b[IVXLCDM]{2,7}\b|\b[IVX]\b(?=\W*$)|\d+")
+
+
+def _plausible(src, out):
+    """The fast translation of a title, or the translator making things up: 'Inferno' -> 'What the
+    hell?', 'Canto VII' -> 'Song of Solomon', '(1862)' -> '(French)', 'Prólogo' -> 'The first part
+    of the report'. Its numbers must all come through, and no new ones."""
+    if not out or any(c in out and c not in src for c in "?!♪♫"):
+        return False
+    if any(n not in out for n in TITLE_NUM.findall(src)) or set(re.findall(r"\d+", out)) - set(re.findall(r"\d+", src)):
+        return False
+    return len(out.split()) <= 2 * len(src.split()) + 2
+
+
+def translate_titles(smart, titles, lang, src_code, target, book=False, about="", names=()):
+    """Chapter titles in the language being read. The AI, when it runs, translates them as lists
+    (a title alone has no context: 'Действие первое' is 'Act One', not 'Action one'); otherwise
+    the fast translator, in one batch. book: the book's own title (and author), given as published
+    ('Le tour du monde en quatre-vingts jours' -> 'Around the World in Eighty Days', not 'A
+    Round-the-World Journey in Eighty Days'). about: the book the chapters are from ('"Le tour du
+    monde…" by Jules Verne'). names: the book's names of people and places (book_names): MEASURED,
+    the fast translator turned the servant Passepartout into 'Everywhere' and 'Password', so a
+    title of its that loses a name keeps its original wording."""
     into, name = lang_name(target), lang_name(lang)
-    if smart.best and smart.engine.status in ("gpu", "cpu") and titles:
-        numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(titles))
+    book_words = tuple(names)
+    if smart.best and smart.engine.status in ("gpu", "cpu") and titles and book:
         msgs = [{"role": "system", "content":
-                 f"These are the chapter titles of a {name} book, in order. Translate each into {into} as a "
-                 f"published translation would title it. Reply with exactly {len(titles)} numbered lines, "
-                 "the translations only."},
-                {"role": "user", "content": numbered}]
+                 f"Line 1 is the title of a {name} book" + (", line 2 its author" if len(titles) > 1 else "") +
+                 f". Give the title it is published under in {into} (translate it only if it has none)" +
+                 (f" and the author's name as {into} writes it" if len(titles) > 1 else "") +
+                 f". Reply with exactly {len(titles)} numbered lines, nothing else."},
+                {"role": "user", "content": "\n".join(f"{i + 1}. {t}" for i, t in enumerate(titles))}]
         try:
-            text = _clean_list(smart.engine.chat(msgs, max_tokens=min(1500, 40 * len(titles) + 60), timeout=60))
+            text = _clean_list(smart.engine.chat(msgs, max_tokens=120, timeout=30))
             if len(text) == len(titles):
                 return text
         except Exception:
             pass
+    elif smart.best and smart.engine.status in ("gpu", "cpu") and titles:
+        # 30 at a time, each given time by its length: MEASURED 37 titles took 54 s on an RX 580
+        # (a single 60 s request, shared with the reading, ran out and was lost)
+        done = []
+        for at in range(0, len(titles), 30):
+            part = titles[at:at + 30]
+            numbered = "\n".join(f"{at + i + 1}. {t}" for i, t in enumerate(part))
+            msgs = [{"role": "system", "content":
+                     f"These are chapter titles of {about + ', a ' if about else 'a '}{name} book, in order. Translate every one "
+                     f"into {into}, keeping its meaning exactly, as a published {into} translation would title "
+                     f"it. Names of people, places and ships stay exactly as written. Reply with exactly "
+                     f"{len(part)} numbered lines, the translations only."},
+                    {"role": "user", "content": numbered}]
+            try:
+                text = _clean_list(smart.engine.chat(msgs, max_tokens=60 * len(part) + 60, timeout=30 + 5 * len(part)))
+            except Exception:
+                break
+            if len(text) != len(part):
+                break
+            done += text
+        if len(done) == len(titles):
+            return done
     tgt = LANGS.get(target, ("eng_Latn",))[0]
+    # names copied letter for letter: Latin-letter names into a Latin-letter language (a Russian
+    # 'Иван' is rightly written 'Ivan', and a French 'Paris' 'Париж')
+    import unicodedata
+    book_words = tuple(n for n in book_words if tgt.endswith("_Latn")
+                       and all(unicodedata.name(c, "").startswith("LATIN") for c in n))
+    # the fast translator garbles a chapter's number ('III' -> 'The Commission shall adopt a
+    # decision', 'XV' -> '15th edition') and can't write '—' ('⁇'): a leading number stays as it is
+    # and only the name after it is translated, its dashes given as colons; a translation that
+    # looks made up keeps the original name
+    nums, names = [], []
+    for t in titles:
+        m = LEAD_NUM.match(t)
+        nums.append(m.group("num") if m else "")
+        names.append(t[m.end():] if m else t)
+    todo = [re.sub(r"\s*[—–]\s*", ": ", n) for n in names]
     try:
-        out = smart.nllb.translate_many(titles, src_code, tgt)
+        out = smart.nllb.translate_many(todo, src_code, tgt)
     except Exception:
         return None
-    return [re.sub(r"\s+([.,;:!?])", r"\1", t).rstrip(" .") or o for t, o in zip(out, titles)]
+    done = []
+    for num, name, src, o, t in zip(nums, names, todo, out, titles):
+        o = re.sub(r"\s+([.,;:!?])", r"\1", re.sub(r"\s*⁇\s*", " ", o)).strip().rstrip(" .")
+        kept = len(_names_in(o, _names_in(src, book_words))) == len(_names_in(src, book_words))
+        o = o if name.strip() and re.search(r"[^\W\d_]", name) and _plausible(src, o) and kept else name.strip()
+        done.append(f"{num} — {o}" if num and o else num or o or t)
+    return done
+
+
+def _names_in(text, names):
+    """The book's names that this text has, as whole words."""
+    words = {re.sub(r"['’]s$", "", w.lower()) for w in re.findall(r"[^\W\d_][\w'’-]*", text)}   # (Fogg's: Fogg)
+    return [n for n in names if n.lower() in words]
+
+
+def book_names(sentences):
+    """Names of people and places in a book: words it writes with a capital letter in the middle
+    of a sentence again and again, and never in small letters ('Passepartout', 'Fogg', 'Fix')."""
+    caps, small = {}, set()
+    for s in sentences:
+        for i, w in enumerate(s.words):
+            t = re.sub(r"^[\W_]+|[\W_]+$", "", w.text)
+            if len(t) < 3 or not t.isalpha():
+                continue
+            if t[0].isupper() and not t.isupper() and i > 0 and not s.words[i - 1].text.rstrip().endswith(
+                    (".", "!", "?", ":", "—", "«", "\"", "“")):
+                caps[t] = caps.get(t, 0) + 1
+            elif t.islower():
+                small.add(t)
+    return sorted(t for t, n in caps.items() if n >= 3 and t.lower() not in small)
 
 
 def _clean_list(text):
@@ -330,17 +420,17 @@ def _clean_list(text):
     return [re.sub(r"^\s*\d+[.)]\s*", "", l).strip() for l in text.strip().splitlines() if l.strip()]
 
 
-def titles_in_steps(smart, titles, lang, src_code, target, emit):
+def titles_in_steps(smart, titles, lang, src_code, target, emit, book=False, about="", names=()):
     """Titles in the language being read: the fast translation at once, then, when the AI was
     still starting, its better one as soon as it is ready ('Action one' -> 'Act One')."""
     had_ai = smart.best and smart.engine.status in ("gpu", "cpu")
-    out = translate_titles(smart, titles, lang, src_code, target)
+    out = translate_titles(smart, titles, lang, src_code, target, book, about, names)
     if out:
         emit(out)
     if had_ai or not smart.best or not smart.engine.available() or smart.engine.status == "failed":
         return
     smart.engine.start()
     if smart.engine.ready.wait(180) and smart.engine.status in ("gpu", "cpu"):
-        better = translate_titles(smart, titles, lang, src_code, target)
+        better = translate_titles(smart, titles, lang, src_code, target, book, about, names)
         if better and better != out:
             emit(better)

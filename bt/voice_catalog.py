@@ -120,7 +120,7 @@ CATALOG = {
     'zh_CN-xiao_ya-medium': ('zh', 'China', 'medium', 63),
 }
 
-# licence of each voice's recordings, from its MODEL_CARD on rhasspy/piper-voices (read 2026-10-08)
+# license of each voice's recordings, from its MODEL_CARD on rhasspy/piper-voices (read 2026-10-08)
 LICENSES = {
     'ar_JO-kareem-medium': "see the voice's page",
     'bg_BG-dimitar-medium': 'public domain',
@@ -147,8 +147,8 @@ LICENSES = {
     'en_US-john-medium': 'public domain',
     'en_US-kristin-medium': 'public domain',
     'en_US-kusal-medium': "see the voice's page",
-    'en_US-lessac-high': 'research licence',
-    'en_US-lessac-medium': 'research licence',
+    'en_US-lessac-high': 'research license',
+    'en_US-lessac-medium': 'research license',
     'en_US-ljspeech-high': 'public domain',
     'en_US-ljspeech-medium': 'public domain',
     'en_US-mike-medium': 'public domain',

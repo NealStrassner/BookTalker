@@ -72,7 +72,7 @@ class Layout:
 
 class LayoutModel:
     """Surya's rf-detr page-layout model (exported to ONNX by tools/export_layout_onnx.py),
-    run with onnxruntime. Same pre/post-processing as surya: ImageNet-normalise, resize to
+    run with onnxruntime. Same pre/post-processing as surya: ImageNet-normalize, resize to
     the model resolution, sigmoid top-k, threshold 0.4, merge same-label contained boxes."""
 
     THRESHOLD = 0.4
@@ -841,7 +841,7 @@ def _geometric_order(order, groups, width):
 
 
 class LayoutCache:
-    """Per-book cache of processed pages on disk, so a book is only analysed once.
+    """Per-book cache of processed pages on disk, so a book is only analyzed once.
 
     New pages are appended to a small journal (<id>.jsonl), one line per page: rewriting the
     whole cache (2+ MB of JSON) holds Python's lock for ~260 ms, measured, which starved the

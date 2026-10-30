@@ -48,7 +48,7 @@ def region(stem):
 
 
 def license(stem):
-    """The licence of the voice's recordings ('public domain', 'CC BY 4.0', 'non-commercial' ...)."""
+    """The license of the voice's recordings ('public domain', 'CC BY 4.0', 'non-commercial' ...)."""
     from .voice_catalog import LICENSES
     return LICENSES.get(stem, "")
 

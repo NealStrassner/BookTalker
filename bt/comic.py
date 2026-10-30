@@ -8,7 +8,7 @@ the light paper inside one inked outline is one connected patch, so lines on the
 one balloon and lines split by ink are not. Text printed straight on the art (no outline) is
 grouped by how close its lines sit.
 
-Comic pages are recognised by the file they came from (comic archives) or by the page itself
+Comic pages are recognized by the file they came from (comic archives) or by the page itself
 (a scanned PDF): vertical Japanese text, or most of the text sitting inside big pictures.
 """
 import re

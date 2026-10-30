@@ -322,11 +322,11 @@ class VoicePicker(QDialog):
         self.search.setEnabled(True)
         self.primary.show()
         self.secondary.setText(tr("Not now") if self.first_run else tr("Cancel"))
-        self.summary.setText(tr("Download failed: {err}", err=err) if err != "cancelled" else tr("Download cancelled"))
+        self.summary.setText(tr("Download failed: {err}", err=err) if err != "canceled" else tr("Download canceled"))
 
     def _cancel(self):
         if self._dl is not None:
-            self._dl.cancelled = True
+            self._dl.canceled = True
             return
         self.reject()
 
@@ -440,11 +440,11 @@ class DownloadPrompt(QDialog):
         self.bar.hide()
         self.primary.show()
         self.secondary.setText(tr("Not now"))
-        self.status.setText(tr("Download failed: {err}", err=err) if err != "cancelled" else tr("Download cancelled"))
+        self.status.setText(tr("Download failed: {err}", err=err) if err != "canceled" else tr("Download canceled"))
 
     def _cancel(self):
         if self._dl is not None:
-            self._dl.cancelled = True
+            self._dl.canceled = True
             return
         self.reject()
 

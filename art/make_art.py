@@ -42,7 +42,7 @@ def glow_layer(w, h, draw_fn, blurs=((0, 1.0), (6, 0.9), (24, 0.7), (70, 0.55)))
 
 
 def page_card(w, h, ss, line_rng):
-    """A tilted page with grey text lines and one gold-highlighted word."""
+    """A tilted page with gray text lines and one gold-highlighted word."""
     pw, ph = int(w * 0.25), int(w * 0.25 * 1.32)
     S = ss
     img = Image.new("RGBA", (pw * S, ph * S), (0, 0, 0, 0))

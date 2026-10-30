@@ -9,6 +9,9 @@ become chapters) for the typesetter in convert.py.
     EML MHT MHTML                the e-mail / web-archive's HTML or text part
     TXTZ HTMLZ FBZ               zipped text / web page / FictionBook
     TEX                          LaTeX sections -> headings, commands stripped
+    1-9 MAN                      Linux/Unix manual pages (man and mdoc macros) -> sections as headings
+    INFO                         GNU Info manuals -> nodes as headings
+    NFO DIZ                      release notes: ASCII art dropped, the words kept
 """
 import email
 import email.policy
@@ -242,7 +245,8 @@ def looks_like_heading(p):
     """A short line naming a chapter, or set in capitals, without sentence punctuation."""
     from .book import CHAPTER_WORD
     letters = [c for c in p if c.isalpha()]
-    return bool(len(p) <= 80 and p[-1:] not in ".,;:!?\"'" and letters and
+    end = p.rstrip("\"'”’»“‘« ")[-1:]               # (a quoted note ends before its quote marks)
+    return bool(len(p) <= 80 and p[-1:] not in "\"'" and end not in ".,;:!?" and letters and
                 (CHAPTER_WORD.search(p) or (len(letters) >= 3 and sum(c.isupper() for c in letters) / len(letters) > 0.8)))
 
 
@@ -250,18 +254,28 @@ def promote_headings(body):
     """<p> lines that name a chapter ('CHAPTER 1: NAMES', 'Introduction') -> <h2>, so a book
     styled only by its (dropped) CSS still has chapters. Lines of a contents page are left alone."""
     from .book import CHAPTER_WORD, CONTENTS_LINE
+    from .chapters import NUMBERED
 
     def fix(m):
         text = " ".join(html.unescape(re.sub(r"<[^>]+>", " ", m.group(2))).split())
-        if text and len(text) <= 90 and CHAPTER_WORD.search(text) and not CONTENTS_LINE.search(text) \
-                and text[-1:] not in ".,;!?":
+        end = text.rstrip("\"'”’»“‘« ")[-1:]
+        # (a numbered chapter's name may ask or exclaim: 'CHAPTER XI. Who Stole the Tarts?')
+        m_num = NUMBERED.match(text)                   # (and may be long: 'Capítulo VI. Del donoso y grande …')
+        if text and len(text) <= (160 if m_num else 90) and CHAPTER_WORD.search(text) and not CONTENTS_LINE.search(text) \
+                and (end not in ".,;!?" or (end in "!?" and m_num and m_num.group("rest").strip())):
             return f"<h2>{esc(text)}</h2>"
         return m.group(0)
     body = re.sub(r"(?is)<p\b([^>]*)>(.*?)</p>", fix, body)
     # Kindle books often mark chapter titles only in bold: <b>CHAPTER 3: <br/> FIRST LETTER …</b>
     def bold(m):
-        before = m.string[:m.start()].rstrip()[-1:]
-        after = m.string[m.end():].lstrip()[:1]
+        # the nearest non-space characters before and after (MEASURED: copying the text on each
+        # side to find them took over half an hour on a 50 MB help file)
+        s, i, j = m.string, m.start() - 1, m.end()
+        while i >= 0 and s[i].isspace():
+            i -= 1
+        while j < len(s) and s[j].isspace():
+            j += 1
+        before, after = s[i:i + 1] if i >= 0 else "", s[j:j + 1]
         alone = before in ("", ">") and after in ("", "<")      # on its own line, not inside a sentence
         return fix(re.match(r"(?s)()(.*)", m.group(3))) if alone else m.group(0)
     return re.sub(r"(?is)<(b|strong)\b([^>]*)>(.*?)</\1>", bold, body)
@@ -510,4 +524,190 @@ def tex(text):
         if not b:
             continue
         out.append(b if b.startswith("<h") else f"<p>{esc(' '.join(b.split()))}</p>")
+    return "\n".join(out)
+
+
+# ---- Linux manual pages and GNU Info -------------------------------------------------------
+_MAN_CHARS = {"em": "—", "en": "–", "hy": "-", "bu": "•", "co": "©", "rg": "®", "tm": "™", "lq": "“",
+              "rq": "”", "oq": "‘", "cq": "’", "aq": "'", "dq": '"', "ga": "`", "aa": "´", "mi": "-",
+              "mu": "×", "de": "°", "<=": "≤", ">=": "≥", "->": "→", "<-": "←", "ti": "~", "ha": "^",
+              "rs": "\\", "sl": "/", "R": "®", "Tm": "™"}
+_MAN_ESC = {"-": "-", "e": "\\", "&": "", "|": "", "^": "", ":": "", "c": "", "0": " ", "~": " ", " ": " "}
+# mdoc words that only mark up the words after them ('.It Fl v Ar file' -> '-v file')
+_MDOC = {"Ar", "Cm", "Dv", "Em", "Er", "Ev", "Fa", "Fn", "Ft", "Ic", "Li", "Ms", "Pa", "Sy", "Va", "Ql",
+         "Dq", "Sq", "Pq", "Op", "Oo", "Oc", "No", "Ns", "Ap", "Nm", "Xr", "Tn", "Bq", "Brq", "Aq"}
+
+
+def _man_inline(s):
+    """troff escapes in a line -> plain text."""
+    s = re.sub(r'\\".*', "", s)                                          # comment
+    s = re.sub(r"\\f(\[[^\]]*\]|\(..|.)", "", s)                         # font changes
+    s = re.sub(r"\\s[+-]?\d+", "", s)                                    # size changes
+    s = re.sub(r"\\\*?\[([^\]]+)\]", lambda m: _MAN_CHARS.get(m.group(1), ""), s)
+    s = re.sub(r"\\\*?\((..)", lambda m: _MAN_CHARS.get(m.group(1), ""), s)
+    s = re.sub(r"\\\*.", "", s)                                          # one-letter strings
+    return re.sub(r"\\(.)", lambda m: _MAN_ESC.get(m.group(1), m.group(1)), s)
+
+
+def _man_args(args):
+    """A macro's arguments: words, or "quoted words" ("" inside the quotes is one quote mark)."""
+    return [w or q.replace('""', '"') for q, w in re.findall(r'"((?:[^"]|"")*)"?|(\S+)', args)]
+
+
+def man(text):
+    """A manual page (man or BSD mdoc macros) -> HTML: each section (NAME, SYNOPSIS, OPTIONS…)
+    a heading, option tags as their own lines, examples kept as typed."""
+    out, para, pre = [], [], None
+    tag_next, skip_to, name = False, None, ""
+
+    def flush():
+        if para:
+            out.append(f"<p>{esc(' '.join(para))}</p>")
+            para.clear()
+
+    def add(words):
+        nonlocal tag_next
+        t = _man_inline(words).strip()
+        if t:
+            para.append(t)
+        if tag_next:                                    # the tag line after .TP: a line of its own
+            flush()
+            tag_next = False
+
+    for line in text.replace("\r\n", "\n").split("\n"):
+        if skip_to:                                     # a macro definition or ignored block
+            if line.strip() == skip_to:
+                skip_to = None
+            continue
+        if pre is not None:
+            if re.match(r"[.'](fi|EE|Ed)\b", line):
+                out.append(f"<pre>{esc(chr(10).join(pre))}</pre>")
+                pre = None
+            elif not re.match(r"[.']", line):
+                pre.append(_man_inline(line))
+            continue
+        m = re.match(r"[.']\s*([A-Za-z][A-Za-z0-9]?)\b\s*(.*)", line)
+        if not m:
+            if line.startswith((".", "'")):             # '.\"' comments, '.' alone, '..'
+                continue
+            if line.strip():
+                add(line)
+            else:
+                flush()
+            continue
+        mac, words = m.group(1), _man_args(m.group(2))
+        if mac in ("de", "ig", "am"):
+            skip_to = ".."
+        elif mac in ("SH", "Sh", "SS", "Ss"):
+            flush()
+            head = _man_inline(" ".join(words)).strip()
+            head = head.capitalize() if head.isupper() else head
+            lvl = 2 if mac in ("SH", "Sh") else 3
+            out.append(f"<h{lvl}>{esc(head)}</h{lvl}>")
+        elif mac in ("PP", "LP", "P", "Pp", "sp", "br", "Lp", "RS", "RE", "El"):
+            flush()
+        elif mac in ("TP", "TQ"):
+            flush()
+            tag_next = True
+        elif mac in ("IP", "It"):
+            flush()
+            if words and mac == "IP":
+                add(words[0])
+            elif words:
+                add(_mdoc(words))
+                flush()
+        elif mac in ("nf", "EX", "Bd"):
+            flush()
+            pre = []
+        elif mac in ("B", "I", "SM", "SB"):
+            add(" ".join(words))
+        elif mac in ("BR", "RB", "BI", "IB", "IR", "RI"):
+            add("".join(words))                          # alternating fonts, no spaces between
+        elif mac == "Nd":
+            add("— " + " ".join(words))
+        elif mac == "Nm":                               # '.Nm' alone repeats the program's name
+            if words and re.fullmatch(r"[.,:;)\]!?]+", words[0]):   # '.Nm .' -> 'tmux.'
+                add(name + " ".join(words))
+            else:
+                name = name or (words[0] if words else "")
+                add(_mdoc(["Nm"] + words) if words else name)
+        elif mac in ("Fl", "Ar", "Xr", "Op", "Cm", "Pa", "Em", "Sy", "Dq", "Ql", "Va", "Ev",
+                     "Li", "Ic", "Fn", "Fa", "Ft", "Dv", "Er", "No", "Tn", "Sq", "Pq", "Aq"):
+            add(_mdoc([mac] + words))
+        # other requests (.TH .Dd .Dt .Os .ft .in .ne .ad .so …) carry nothing to read
+    flush()
+    if pre is not None:
+        out.append(f"<pre>{esc(chr(10).join(pre))}</pre>")
+    return "\n".join(out)
+
+
+def _mdoc(words):
+    """mdoc words with their markup names dropped: 'Fl v Ar file' -> '-v file'."""
+    out, flag = [], False
+    for w in words:
+        if w == "Fl":
+            flag = True
+        elif w in _MDOC:
+            continue
+        else:
+            out.append(("-" + w) if flag else w)
+            flag = False
+    return " ".join(out)
+
+
+def nfo(text):
+    """A release note that comes with a program or a game (.nfo, FILE_ID.DIZ) -> HTML. Its
+    ASCII-art logo, frames and borders are dropped and the words kept: 'Label : value' lines
+    stay lines of their own, wrapped sentences are joined."""
+    paras, cur = [], []
+
+    def end():
+        if cur:
+            paras.append(" ".join(cur))
+            cur.clear()
+    for line in text.replace("\r\n", "\n").split("\n"):
+        line = re.sub(r"[─-▟■-◿]", " ", line)          # box drawing, blocks, shapes
+        line = re.sub(r"([^\w\s]|_)\1{2,}", " ", line)                      # ---- .... //// ____
+        line = re.sub(r"^(?:[^\w(\[\"'“‘]|_)+|(?:[^\w.!?)\]\"'”’%]|_)+$", "", line.strip())   # side borders
+        letters = sum(c.isalnum() for c in line)
+        ink = sum(not c.isspace() for c in line)
+        if not line or letters < 0.6 * ink or re.fullmatch(r"(?:[^\W\d_]\s+){2,}[^\W\d_]", line):
+            end()                                     # art, or a logo spelled out ('E c k o')
+            continue
+        line = " ".join(line.split())
+        if re.match(r"[^\W\d_][\w .'/()&-]{0,24}?\s*:\s*\S", line):          # 'Publisher : InterChannel'
+            end()
+            paras.append(line)
+            continue
+        cur.append(line)
+    end()
+    return "\n".join(f"<p>{esc(p)}</p>" for p in paras)
+
+
+def info(text):
+    """A GNU Info manual -> HTML: each node (between the ^_ marks) under its title as a heading;
+    the tag tables, menus' '* Name::' markup and title underlines are dropped."""
+    out = []
+    for node in text.split("\x1f"):
+        node = node.lstrip("\n")
+        head, _, body = node.partition("\n")
+        name = re.search(r"Node:\s*([^,\t\n]+)", head)
+        if not name:                                    # the preamble, tag tables, local variables
+            continue
+        title = name.group(1).strip()
+        m = re.match(r"\s*([^\n]+)\n[*=\-.]{3,}[ \t]*\n", body)
+        if m:                                           # the node's own underlined title
+            title, body = m.group(1).strip(), body[m.end():]
+        out.append(f"<h2>{esc(title)}</h2>")
+        body = re.sub(r"(?m)^[*=\-.]{3,}[ \t]*$", "", body)
+        body = re.sub(r"\*[Nn]ote\s+([^:]+?)::?", r"see \1", body)
+        body = re.sub(r"(?m)^\* ([^:\n]+?)::?", r"\1", body)
+        for block in re.split(r"\n\s*\n", body):
+            if not block.strip():
+                continue
+            lines = block.split("\n")
+            if all(l.startswith(" " * 5) or not l.strip() for l in lines):     # an example, indented
+                out.append(f"<pre>{esc(chr(10).join(l[5:] for l in lines))}</pre>")
+            else:
+                out.append(f"<p>{esc(' '.join(block.split()))}</p>")
     return "\n".join(out)
