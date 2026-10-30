@@ -3,7 +3,7 @@
 ; offers "only for me", which needs no administrator and installs into %LOCALAPPDATA%\Programs.
 
 #define AppName "BookTalker"
-#define AppVersion "1.0.7"
+#define AppVersion "1.0.8"
 #define AppExe "BookTalker.exe"
 
 [Setup]

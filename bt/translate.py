@@ -191,6 +191,20 @@ def join_text(words):
     return out
 
 
+# punctuation missing from NLLB's word pieces: each became '⁇' in the translation ('d’un',
+# '«reading sauce»'); its training text was normalized the same way
+PLAIN = str.maketrans({"«": '"', "»": '"', "“": '"', "”": '"', "„": '"', "‟": '"',
+                       "‘": "'", "’": "'", "‚": "'", "‛": "'", "–": "-", "—": " - "})
+
+
+def _plain(text):
+    return text.translate(PLAIN)
+
+
+def _unk_free(text):
+    return re.sub(r"\s*⁇\s*", " ", text).strip()
+
+
 class Translator:
     """Loads on first use; thread-safe; caches every sentence it translates."""
 
@@ -224,10 +238,10 @@ class Translator:
         with self._lock:
             if self._tr is None:
                 self._load()
-            pieces = self._sp.encode(text, out_type=str)[:400]
+            pieces = self._sp.encode(_plain(text), out_type=str)[:400]
             r = self._tr.translate_batch([[src_code] + pieces + ["</s>"]], target_prefix=[[tgt_code]],
                                          beam_size=4, max_decoding_length=320, repetition_penalty=1.15)
-            out = self._sp.decode(r[0].hypotheses[0][1:]).strip()
+            out = _unk_free(self._sp.decode(r[0].hypotheses[0][1:]))
         self._cache[key] = out
         return out
 
@@ -238,9 +252,9 @@ class Translator:
             with self._lock:
                 if self._tr is None:
                     self._load()
-                batch = [[src_code] + self._sp.encode(t, out_type=str)[:120] + ["</s>"] for t in todo]
+                batch = [[src_code] + self._sp.encode(_plain(t), out_type=str)[:120] + ["</s>"] for t in todo]
                 rs = self._tr.translate_batch(batch, target_prefix=[[tgt_code]] * len(batch), beam_size=2,
                                               max_decoding_length=160, repetition_penalty=1.15, max_batch_size=16)
                 for t, r in zip(todo, rs):
-                    self._cache[(t, src_code, tgt_code)] = self._sp.decode(r.hypotheses[0][1:]).strip()
+                    self._cache[(t, src_code, tgt_code)] = _unk_free(self._sp.decode(r.hypotheses[0][1:]))
         return [self._cache.get((t, src_code, tgt_code), t) for t in texts]
