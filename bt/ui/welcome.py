@@ -5,7 +5,7 @@ import pymupdf
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QFontMetrics, QImage, QLinearGradient, QPainter, QPen,
                            QPixmap)
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractButton, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ..paths import resource
 from . import icons, theme as T
@@ -27,8 +27,9 @@ def thumbnail(path, page, cache_dir, key):
     return QImage(out)
 
 
-class BookCard(QWidget):
-    """A book on the shelf: page thumbnail, title, progress; a small × (on hover) takes it off the shelf."""
+class BookCard(QAbstractButton):
+    """A book on the shelf: page thumbnail, title, progress; a small × (on hover) takes it off the shelf.
+    A real button, so a screen reader can press it as well as the keyboard (Enter, Space)."""
     open_requested = Signal(str)
     remove_requested = Signal(str)
 
@@ -48,6 +49,7 @@ class BookCard(QWidget):
         self.setAccessibleName(title + (f", {where}" if where else ""))
         self.setAccessibleDescription(tr("Enter opens it, Delete takes it off this list"))
         self.over_x = False
+        self.clicked.connect(lambda: self.open_requested.emit(self.entry["path"]))
 
     def _x_rect(self):
         return QRectF(self.W - 30, 12, 18, 18)
@@ -85,6 +87,9 @@ class BookCard(QWidget):
         self.update()
         super().focusOutEvent(e)
 
+    def mousePressEvent(self, e):
+        e.accept()                                       # (what a click does is decided on release)
+
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.LeftButton:
             if self._x_rect().adjusted(-3, -3, 3, 3).contains(e.position()):
@@ -101,6 +106,10 @@ class BookCard(QWidget):
         p.setPen(QPen(QColor(255, 255, 255, 40 if self.hover else 18), 1))
         p.setBrush(QColor(28, 34, 46, 235) if self.hover else QColor(22, 27, 37, 220))
         p.drawRoundedRect(card, 14, 14)
+        if self.hasFocus():                              # where the keyboard is: a gold ring
+            p.setPen(QPen(QColor(T.GOLD), 2))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(card.adjusted(-1, -1, 1, 1), 15, 15)
         # page thumbnail, centered, with a thin shadow
         th = QRectF(card.left() + 14, card.top() + 14, card.width() - 28, self.TH - 28)
         if self.image is not None and not self.image.isNull():

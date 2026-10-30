@@ -13,6 +13,20 @@ from . import icons, theme as T
 from .i18n import tr
 
 
+def opens_window(fn):
+    """For a handler that opens a window waiting for an answer (exec): it runs a moment after the
+    press, so the press itself returns at once. (MEASURED: a screen reader's press of a button
+    runs the handler inside the press, so Narrator hung until it timed out while the window was
+    open.) Extra signal arguments (a click's 'checked') are dropped, as Qt drops them."""
+    import functools
+    n = fn.__code__.co_argcount
+
+    @functools.wraps(fn)
+    def run(*a, **k):
+        QTimer.singleShot(0, lambda: fn(*a[:n], **k))
+    return run
+
+
 def soft_shadow(widget, blur=36, dy=10, alpha=150):
     eff = QGraphicsDropShadowEffect(widget)
     eff.setBlurRadius(blur)

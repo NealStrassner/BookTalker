@@ -202,7 +202,7 @@ def _run(job, q):
     from .code import spoken_text
     from .ocr import OCR
     from .reflow import Sentence, Word
-    from .speech import Speaker
+    from .kokoro import load as load_voice
 
     model, ocr = LayoutModel(), OCR()
     book = Book(job["pdf"], lambda: model, source=job["source"], get_ocr=lambda: ocr,
@@ -228,7 +228,7 @@ def _run(job, q):
     total = sum(len(ss) for _i, _t, ss in lists) or 1
     q.put(("start", len(lists)))
 
-    speaker = Speaker(job["voice_path"])
+    speaker = load_voice(job["voice_path"])        # (a Piper or a Kokoro voice)
     translator = None
     if job.get("translate"):
         from .llm import SmartTranslator

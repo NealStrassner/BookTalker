@@ -26,7 +26,7 @@ class _S:
 
 
 def _serve(conn):
-    from .speech import Speaker
+    from .kokoro import load as load_voice
     speakers = {}
     while True:
         try:
@@ -38,7 +38,7 @@ def _serve(conn):
             if op == "load":
                 _, stem, path = msg
                 if stem not in speakers:
-                    speakers[stem] = Speaker(path)
+                    speakers[stem] = load_voice(path)     # (a Piper or a Kokoro voice)
                 conn.send(("ok", speakers[stem].rate))
             elif op == "speak":
                 _, stem, says, pause, speed = msg

@@ -35,7 +35,7 @@ def export_audio(path, out, pages, translate=False, target="en"):
     from bt.llm import SmartTranslator
     from bt.ocr import OCR
     from bt.reflow import Sentence, Word
-    from bt.speech import Speaker
+    from bt.kokoro import load as load_voice
     from bt.translate import Translator
 
     model, ocr = LayoutModel(), OCR()
@@ -52,7 +52,7 @@ def export_audio(path, out, pages, translate=False, target="en"):
     voice = voices.default_for(target if translate else book.lang)
     if voice is None:
         sys.exit(f"No {target} voice installed — pick it once in the app's globe menu to download it.")
-    speaker = Speaker(voices.installed()[voice]["path"])
+    speaker = load_voice(voices.installed()[voice]["path"])     # (a Piper or a Kokoro voice)
     translator = None
     if translate:   # no deadline here: always wait for the AI translation (NLLB if no AI)
         translator = SmartTranslator(Translator())

@@ -7,9 +7,10 @@ INK_1 = "#11151D"        # bars
 INK_2 = "#181D27"        # raised surfaces, cards
 INK_3 = "#222937"        # hover
 LINE = "#2A3242"         # hairlines
+FIELD_EDGE = "#5C6880"   # the edge of a box to type in or pick from (WCAG AA for controls: 3:1)
 TEXT = "#ECEFF4"
 TEXT_2 = "#A3ACBC"       # secondary
-TEXT_3 = "#6B7586"       # tertiary / disabled
+TEXT_3 = "#8690A1"       # tertiary / disabled (WCAG AA: 4.5:1 even on INK_3; #6B7586 was 3.1)
 GOLD = "#F2B33D"
 GOLD_HI = "#FFC95C"
 GOLD_LO = "#C98E1F"
@@ -51,6 +52,7 @@ QMenu {{ background: {INK_2}; border: 1px solid {LINE}; border-radius: 10px; pad
 QMenu::item {{ padding: 7px 26px 7px 14px; border-radius: 6px; font-size: 13px; }}
 QMenu::item:selected {{ background: {INK_3}; }}
 QMenu::item:checked {{ color: {GOLD}; }}
-QLineEdit {{ background: {INK_2}; border: 1px solid {LINE}; border-radius: 8px;
+QLineEdit {{ background: {INK_2}; border: 1px solid {FIELD_EDGE}; border-radius: 8px;
              padding: 4px 8px; selection-background-color: {GOLD}; selection-color: {ON_GOLD}; }}
+QLineEdit:focus {{ border-color: {GOLD}; }}
 """

@@ -2,8 +2,8 @@
 it. Shown on first run and from 'More voices…' / 'More languages…'. Also the one-voice DownloadPrompt."""
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QAbstractButton, QDialog, QHBoxLayout, QLabel, QLineEdit, QScrollArea,
+                               QVBoxLayout, QWidget)
 
 from .. import packs, voices
 from . import i18n, theme as T
@@ -24,15 +24,17 @@ def _items(key):
     return packs.ai_items() if key == AI else packs.translator_items() if key == FAST else packs.voice_items(key)
 
 
-class VoiceRow(QWidget):
-    """One voice: painted gold checkbox, 'Name — description (size)', a quiet note on the right."""
-    toggled = Signal()
+class VoiceRow(QAbstractButton):
+    """One voice: painted gold checkbox, 'Name — description (size)', a quiet note on the right.
+    A real checkable button, so screen readers hear a tick box that is ticked or not, and can
+    tick it (Space, Enter, a click or the screen reader's own command)."""
+    changed = Signal()
 
     def __init__(self, stem, have, locked, checked, text=None, parent=None):
         super().__init__(parent)
-        self.stem, self.have, self.locked, self.checked = stem, have, locked, checked
+        self.stem, self.have, self.locked = stem, have, locked
         mb = _mb(stem)
-        self.text = text or f"{voices.display_name(stem)}  —  {voices.describe(stem)}" + (f"  ({mb} MB)" if mb else "")
+        self.label = text or f"{voices.display_name(stem)}  —  {voices.describe(stem)}" + (f"  ({mb} MB)" if mb else "")
         self.note = tr("built in") if locked and stem not in (AI, FAST) else (tr("on this computer") if have else "")
         lic = voices.license(stem) if stem not in (AI, FAST) else ""
         if lic:
@@ -43,11 +45,22 @@ class VoiceRow(QWidget):
         self.setFixedHeight(34)
         self.setCursor(Qt.ArrowCursor if locked else Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.TabFocus)
-        self._name_for_readers()
+        self.setCheckable(True)
+        self.setChecked(checked)
+        self.toggled.connect(lambda _on: (self.update(), self.changed.emit()))
+        self.setAccessibleName(self.label + (f", {self.note}" if self.note else ""))
+
+    @property
+    def checked(self):
+        return self.isChecked()
 
     def matches(self, words):
-        hay = (self.text + " " + self.stem + " " + i18n.AUTONYM.get(self.stem[:2], "")).lower()
+        hay = (self.label + " " + self.stem + " " + i18n.AUTONYM.get(self.stem[:2], "")).lower()
         return all(w in hay for w in words)
+
+    def nextCheckState(self):
+        if not self.locked:                     # a built-in voice stays
+            super().nextCheckState()
 
     def enterEvent(self, e):
         self.hover = True
@@ -57,36 +70,11 @@ class VoiceRow(QWidget):
         self.hover = False
         self.update()
 
-    def _name_for_readers(self):
-        state = tr("built in") if self.locked else (tr("chosen") if self.checked else tr("not chosen"))
-        self.setAccessibleName(f"{self.text}, {state}")
-
-    def _toggle(self):
-        if not self.locked and self.isEnabled():
-            self.checked = not self.checked
-            self._name_for_readers()
-            self.update()
-            self.toggled.emit()
-
     def keyPressEvent(self, e):
-        if e.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter):
-            self._toggle()
+        if e.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.click()
         else:
             super().keyPressEvent(e)
-
-    def focusInEvent(self, e):
-        self.hover = True
-        self.update()
-        super().focusInEvent(e)
-
-    def focusOutEvent(self, e):
-        self.hover = False
-        self.update()
-        super().focusOutEvent(e)
-
-    def mouseReleaseEvent(self, e):
-        if e.button() == Qt.LeftButton:
-            self._toggle()
 
     def paintEvent(self, _e):
         p = QPainter(self)
@@ -95,6 +83,10 @@ class VoiceRow(QWidget):
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(T.INK_3))
             p.drawRoundedRect(QRectF(self.rect()), 8, 8)
+        if self.hasFocus():                      # where the keyboard is: a gold ring
+            p.setPen(QPen(QColor(T.GOLD), 2))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), 8, 8)
         box = QRectF(10, (self.height() - 18) / 2, 18, 18)
         dim = self.locked or not self.isEnabled()
         if self.checked:
@@ -105,7 +97,7 @@ class VoiceRow(QWidget):
             p.drawPolyline([QPointF(box.left() + 4.5, box.center().y()), QPointF(box.left() + 7.8, box.bottom() - 4.8),
                             QPointF(box.right() - 4, box.top() + 5)])
         else:
-            p.setPen(QPen(QColor("#46526a"), 1.4))
+            p.setPen(QPen(QColor(T.FIELD_EDGE), 1.4))     # (an unticked box: its edge must show, 3:1)
             p.setBrush(Qt.NoBrush)
             p.drawRoundedRect(box.adjusted(0.7, 0.7, -0.7, -0.7), 5, 5)
         p.setFont(T.font(13))
@@ -120,7 +112,7 @@ class VoiceRow(QWidget):
             p.restore()
             right -= nw + 14
         p.drawText(QRectF(40, 0, right - 40, self.height()), Qt.AlignVCenter,
-                   p.fontMetrics().elidedText(self.text, Qt.ElideRight, int(right - 40)))
+                   p.fontMetrics().elidedText(self.label, Qt.ElideRight, int(right - 40)))
 
 
 class VoicePicker(QDialog):
@@ -151,6 +143,7 @@ class VoicePicker(QDialog):
         top.addWidget(eyebrow)
         top.addStretch()
         self.close_btn = IconButton("close", tr("Close  (Esc)"), 36, 18)
+        self.close_btn.setAccessibleName(tr("Close"))              # what a screen reader announces
         self.close_btn.clicked.connect(self._cancel)
         top.addWidget(self.close_btn)
         lay.addLayout(top)
@@ -170,6 +163,7 @@ class VoicePicker(QDialog):
         lay.addSpacing(14)
         self.search = QLineEdit()
         self.search.setPlaceholderText(tr("Search languages or voices"))
+        self.search.setAccessibleName(tr("Search languages or voices"))
         self.search.setFont(T.font(13))
         self.search.setFixedHeight(36)
         self.search.textChanged.connect(self._filter)
@@ -202,7 +196,7 @@ class VoicePicker(QDialog):
                                        tr("Fast translator — hear books in another language") + f"  ({packs.TRANSLATOR_SIZE_MB} MB)"))
             ai_row.setToolTip(tr("Includes the fast translator, which reads while the AI starts and on computers without a graphics card."))
         for r in tr_rows:
-            r.toggled.connect(self._update_summary)
+            r.changed.connect(self._update_summary)
             col.addWidget(r)
             self.rows.append(r)
         self.sections.append((head, tr_rows))
@@ -215,13 +209,14 @@ class VoicePicker(QDialog):
             rows = []
             for stem, _name, _desc, inst in voices.catalog(code):
                 r = VoiceRow(stem, inst, voices.bundled(stem) and inst, inst or stem in suggest)
-                r.toggled.connect(self._update_summary)
+                r.changed.connect(self._update_summary)
                 col.addWidget(r)
                 rows.append(r)
             self.rows += rows
             self.sections.append((head, rows))
         col.addStretch()
         scroll = QScrollArea()
+        scroll.setAccessibleName(tr("Choose your voices"))          # what a screen reader announces
         scroll.setWidget(inner)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
@@ -393,7 +388,7 @@ class DownloadPrompt(QDialog):
         lay.addSpacing(10)
         ln = QLabel(line)
         ln.setFont(T.font(14, QFont.DemiBold))
-        ln.setStyleSheet(f"background: {T.INK_3}; border: 1px solid {T.LINE}; border-radius: 10px; padding: 10px 14px;")
+        ln.setStyleSheet(f"background: {T.INK_3}; border: 1px solid {T.FIELD_EDGE}; border-radius: 10px; padding: 10px 14px;")
         lay.addWidget(ln)
         lay.addSpacing(16)
         self.bar = _Progress()

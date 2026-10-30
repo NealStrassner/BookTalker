@@ -33,6 +33,7 @@ Made by Neal Strassner. If BookTalker helps you, you can buy him a coffee at
   read and heard in yours, the translation shown under the page. Offline: a fast translator is
   built in, and an optional AI translator gives the best quality.
 - Reads in a natural voice and highlights each word as it is heard. Click any word to read from there.
+  Over 100 Piper voices, plus the very natural Kokoro voices for English and five more languages.
 - Understands the page: skips headers, footers and page numbers, joins words broken across lines,
   follows text across columns and pages, reads comic panels and speech balloons in order (manga
   right to left).
@@ -102,9 +103,10 @@ translator). Everything, translation included, runs offline on your own computer
 
 The bar at the top:
 
-- **Listening time**, beside the page number: how far you are into this chapter and how long it
-  lasts at your reading speed (`6 / 18 min in chapter`). Click it to see the whole book instead.
-  It is worked out from the voice's own pace, measured as it reads.
+- **Time left**, beside the page number: how long the rest of this chapter takes at your reading
+  speed (`12:05 left in chapter`). It counts down as it reads and reaches 0:00 when the chapter
+  ends. Click it to see the time left in the whole book instead. It is worked out from the
+  voice's own pace, measured as it reads.
 - **Chapters:** the book's chapters, each with its listening time. Choose one to read from its
   start.
 - **Search this book:** every match is marked on the page.
@@ -150,8 +152,8 @@ The bar at the bottom:
 | | Minimum | Comfortable |
 |---|---|---|
 | Memory (RAM) | 4 GB | 8 GB |
-| Disk space | 1.5 GB | 2 GB, plus voices (about 60 MB each) and the AI translator (2.6 GB) |
-| Processor | any 64-bit, 2 cores | 4 cores or more |
+| Disk space | 1.5 GB | 2 GB, plus voices (about 60 MB each; Kokoro's model 325 MB) and the AI translator (2.6 GB) |
+| Processor | any 64-bit, 2 cores | 4 cores or more; 6 for the Kokoro voices |
 | Graphics card | not needed | 3 GB free video memory for the optional AI translator |
 
 Measured: reading a book uses about 1 GB of memory. With the optional AI translator running on the
@@ -164,6 +166,13 @@ BookTalker uses [Piper](https://github.com/OHF-voice/piper1-gpl) voices. The bui
 is **Alba**. The voice picker lists over 100 more in about 45 languages, downloaded only when you
 choose them, straight from the Piper voice collection. Hover over a voice to see the license of its
 recordings.
+
+For the most natural speech, the picker also offers **Kokoro** voices
+([Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), Apache-2.0): Heart, Bella, Michael and
+Fenrir (US English), Emma and George (UK English), and voices for Spanish, French, Italian, Brazilian
+Portuguese and Hindi. They light up each word too. The first Kokoro voice downloads the shared model
+(325 MB); each further one is under 1 MB. Kokoro needs a fast processor: on a 6-core Ryzen 5 3600 it
+speaks about twice as fast as it is heard, so it keeps up; on a slow computer choose a Piper voice.
 
 ## License
 

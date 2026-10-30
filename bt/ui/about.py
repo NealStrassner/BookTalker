@@ -9,9 +9,9 @@ from ..packs import REPO
 from ..paths import resource
 from . import theme as T
 from .i18n import tr
-from .widgets import IconButton, PillButton, soft_shadow
+from .widgets import IconButton, PillButton, opens_window, soft_shadow
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 AUTHOR = "Neal Strassner"
 KOFI = "https://ko-fi.com/nealstrassner"         # tips for the author (BookTalker itself stays free)
 SHORTCUTS = [("Space", "Play / pause"), ("← →", "Previous / next sentence"),
@@ -221,6 +221,7 @@ class AboutDialog(QDialog):
         top = QHBoxLayout()
         top.addStretch()
         close = IconButton("close", tr("Close  (Esc)"), 36, 18)
+        close.setAccessibleName(tr("Close"))                       # what a screen reader announces
         close.clicked.connect(self.accept)
         top.addWidget(close)
         lay.addLayout(top)
@@ -303,7 +304,7 @@ class AboutDialog(QDialog):
         lay.addSpacing(6)
         row = QHBoxLayout()
         lic = PillButton(tr("Credits & licenses").replace("&", "&&"))   # (a single & marks a shortcut key)
-        lic.clicked.connect(lambda: LicenseDialog(self).exec())
+        lic.clicked.connect(opens_window(lambda: LicenseDialog(self).exec()))   # (see opens_window)
         row.addWidget(lic)
         self.update_btn = PillButton(tr("Check for updates"))
         self.update_btn.clicked.connect(self._update_clicked)

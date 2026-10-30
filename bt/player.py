@@ -10,6 +10,9 @@ import sounddevice as sd
 from .reflow import Sentence, Word
 
 AHEAD = 3   # sentences prepared ahead of the one playing
+AHEAD_SECONDS = 20      # and at least this much audio, so a slower voice (Kokoro: ~2x real time on a
+                        # mid-range processor) rides out a busy moment without a gap
+PRIOR_LETTERS = 2000    # the pace measured before counts as this many letters (~2 minutes of speech)
 
 
 class Player:
@@ -29,6 +32,8 @@ class Player:
         self.rate = 22050                   # every bundled voice; no need to load one here
         self.speed = 1.0
         self.pace = None                    # seconds a letter at this speed, measured on what this voice says
+        self._paced = [0.0, 0]              # (seconds, letters) the pace is the average of
+        self.priors = {}                    # 'voice@speed' -> the pace measured before (the app's own record)
         self.volume = 1.0                   # the sleep timer fades out with it
         self.lock = threading.Lock()
         self.queue = collections.deque()    # (sentence, audio, times, spoken_words)
@@ -89,6 +94,14 @@ class Player:
         with self.lock:
             return self.pos / self.rate if self.cur else 0.0
 
+    def ahead(self):
+        """-> [(sentence, seconds of its audio still to play)]: the one playing, then those made
+        after it, in reading order (their lengths are exact: the audio exists)."""
+        with self.lock:
+            items = [(self.cur[0], max(0, len(self.cur[1]) - self.pos) / self.rate)] if self.cur else []
+            items += [(q[0], len(q[1]) / self.rate) for q in self.queue]
+        return items
+
     def current_key(self):
         with self.lock:
             if self.cur:
@@ -146,18 +159,24 @@ class Player:
 
     def _learn_pace(self, words, audio, pause):
         """How long this voice takes a letter of the book at the speed it reads at (for the
-        listening times shown; read in translation, a letter of the original): an average that
-        follows the sentences it has said. (MEASURED: at 1.3× the voices are only ~15% quicker,
-        the pauses between words staying as they are, so a pace at 1× can't simply be divided.)"""
+        listening times shown; read in translation, a letter of the original): the average over
+        every sentence said at this voice and speed, with the pace measured before, so it
+        settles instead of wandering.
+        (MEASURED: at 1.3× the voices are only ~15% quicker, the pauses between words staying as
+        they are, so a pace at 1× can't simply be divided.)"""
         letters = sum(c.isalpha() for w in words for c in (w.say or ""))
         if letters < 20:
             return
-        pace = max(0.0, len(audio) / self.rate - pause) / letters
-        self.pace = pace if self.pace is None else 0.85 * self.pace + 0.15 * pace
+        if self.pace is None:                   # a new voice or speed: a new average, starting from
+            prior = self.priors.get(f"{self.voice}@{self.speed:g}")     # what was measured before
+            self._paced = [prior * PRIOR_LETTERS, PRIOR_LETTERS] if prior else [0.0, 0]
+        self._paced[0] += max(0.0, len(audio) / self.rate - pause)
+        self._paced[1] += letters
+        self.pace = self._paced[0] / self._paced[1]
 
     def _check_pace(self, sentence, audio):
-        """A sentence spoken far faster than speech can be (a reader heard a voice 'saying only
-        half of each word' once; not reproduced): note it in error.log to find the cause."""
+        """A sentence spoken far faster than speech can be (words cut to half their length):
+        note it in error.log to find the cause."""
         text = " ".join(w.say for w in sentence.words if w.say)
         seconds = len(audio) / self.rate - sentence.pause
         letters = sum(c.isalpha() for c in text)
@@ -209,7 +228,8 @@ class Player:
                 ready = len(self.queue) + (0 if self.cur is None else 1)
                 if self.cur is not None and self.pos >= len(self.cur[1]) and self.queue:
                     ready -= 1
-            if self.start_key is None or ready > AHEAD or self.finished:
+                buffered = sum(len(q[1]) for q in self.queue) + (max(0, len(self.cur[1]) - self.pos) if self.cur else 0)
+            if self.start_key is None or (ready > AHEAD and buffered >= AHEAD_SECONDS * self.rate) or self.finished:
                 continue
             nxt = self.book.get(pending) if last_key is None else self.book.next_after(last_key)
             if nxt == "wait" or (nxt is None and last_key is None):

@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QEvent, QObject, QSize, QStandardPaths, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QSize, QStandardPaths, Qt, QTimer, Signal
 from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QIcon, QKeySequence, QPainter,
                            QPen, QPixmap)
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMenu,
@@ -27,7 +27,7 @@ from .ui.tools import BookmarksDialog, ExportDialog
 from .ui.voicepicker import DownloadPrompt, VoicePicker
 from .ui.welcome import Welcome
 from .ui.widgets import (TIME_ROLE, Canvas, ChapterItems, Divider, ElidedBox, FloatingBar, IconButton, LoadingCard,
-                         PageBox, PageCanvas, PlayButton, Scrubber, Spinner, Toast)
+                         PageBox, PageCanvas, PlayButton, Scrubber, Spinner, Toast, opens_window)
 
 SPEEDS = (0.75, 0.9, 1.0, 1.15, 1.3, 1.5, 1.75)
 TARGETS = ("en", "es", "fr", "de", "it", "pt", "ru", "zh")     # languages books can be translated into
@@ -93,6 +93,21 @@ class _EnterPresses(QObject):
                     fw.click()
                 return True
         return False
+
+
+def _menu_button(b, menu):
+    """A button that opens its menu when pressed: a click, Enter, or a screen reader's press;
+    the menu shows a moment after the press without holding it (QMenu.popup), below the button,
+    or above it when there is no room. (MEASURED: Qt's own menu buttons ignore a screen reader's
+    press (instant popup) or hold it until the menu closes (delayed popup), so Narrator hung.)"""
+    def show():
+        menu.aboutToShow.emit()             # (filled now, so its height is known for the placement)
+        h = menu.sizeHint().height()
+        pos = b.mapToGlobal(QPoint(0, b.height()))
+        if pos.y() + h > b.screen().availableGeometry().bottom():
+            pos = b.mapToGlobal(QPoint(0, -h))
+        menu.popup(pos)
+    b.clicked.connect(lambda: QTimer.singleShot(0, show))
 
 
 def _spoken_name(tip):
@@ -231,6 +246,7 @@ class Stage(Canvas):
         self.scroll.setStyleSheet("background: transparent;")
         self.scroll.viewport().setAutoFillBackground(False)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)   # width never jumps
+        self.scroll.installEventFilter(self)          # a gold ring when Tab reaches the page
         self.page = PageCanvas()
         self.scroll.setWidget(self.page)
         self.transport = FloatingBar(self, radius=26)
@@ -247,6 +263,13 @@ class Stage(Canvas):
         self.subtitle.hide()
         self.toast = Toast(self)
         self.loading = LoadingCard(self)
+
+    def eventFilter(self, obj, e):
+        if obj is self.scroll and e.type() in (QEvent.FocusIn, QEvent.FocusOut):
+            keys = e.type() == QEvent.FocusIn and e.reason() in (Qt.TabFocusReason, Qt.BacktabFocusReason)
+            ring = f" QScrollArea {{ border: 2px solid {T.GOLD}; border-radius: 6px; }}" if keys else ""
+            self.scroll.setStyleSheet("* { background: transparent; }" + ring)   # (a click shows none)
+        return False
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -433,8 +456,9 @@ class Main(QMainWindow):
         self.chapter_box.setMaxVisibleItems(20)
         self.chapter_box.setFocusPolicy(Qt.TabFocus)
         self.chapter_box.setStyleSheet(f"""
-            QComboBox {{ background: {T.INK_2}; border: 1px solid {T.LINE}; border-radius: 9px; padding: 5px 10px; color: {T.TEXT}; }}
+            QComboBox {{ background: {T.INK_2}; border: 1px solid {T.FIELD_EDGE}; border-radius: 9px; padding: 5px 10px; color: {T.TEXT}; }}
             QComboBox:hover {{ border-color: #46526a; }} QComboBox:disabled {{ color: {T.TEXT_3}; }}
+            QComboBox:focus {{ border-color: {T.GOLD}; }}
             QComboBox::drop-down {{ width: 18px; border: none; }}
             QComboBox QAbstractItemView {{ background: {T.INK_2}; border: 1px solid {T.LINE}; min-width: 360px;
                 selection-background-color: {T.INK_3}; selection-color: {T.GOLD}; outline: none; }}""")
@@ -445,7 +469,7 @@ class Main(QMainWindow):
         self._listen = None                         # (book, code mode, listening index) — see _listen_index
         self._paces = dict(self.settings.get("voice_pace", {}))   # 'voice@speed' -> seconds a letter, as measured
         self._time_scope = self.settings.get("time_scope", "chapter")   # what the time shows: chapter | book
-        self._timed = None                          # the sentence the time was last worked out for
+        self._left = None                           # the time left as last shown: (what, when, seconds, sentence)
         self.chapter_box.view().setItemDelegate(ChapterItems(self.chapter_box))
         self._title_cache = {}                      # (book, language) -> translated chapter titles
         self._book_title_tr = {}                    # (book, language) -> the book's title translated
@@ -459,8 +483,8 @@ class Main(QMainWindow):
         self.search_box.setClearButtonEnabled(True)
         self.search_box.setPlaceholderText(tr("Search this book"))
         self.search_box.addAction(icons.icon("search", T.TEXT_3, 16), QLineEdit.LeadingPosition).setText(tr("Search this book"))
-        self.search_box.setStyleSheet(f"""QLineEdit {{ background: {T.INK_2}; border: 1px solid {T.LINE};
-            border-radius: 9px; padding: 5px 8px; color: {T.TEXT}; }} QLineEdit:focus {{ border-color: {T.GOLD_LO}; }}""")
+        self.search_box.setStyleSheet(f"""QLineEdit {{ background: {T.INK_2}; border: 1px solid {T.FIELD_EDGE};
+            border-radius: 9px; padding: 5px 8px; color: {T.TEXT}; }} QLineEdit:focus {{ border-color: {T.GOLD}; }}""")
         self.search_box.textChanged.connect(lambda _t: self._search_timer.start(250))
         self.search_box.returnPressed.connect(lambda: self._search_step(-1 if QApplication.keyboardModifiers() & Qt.ShiftModifier else 1))
         self.search_box.installEventFilter(self)                     # Esc clears
@@ -504,8 +528,7 @@ class Main(QMainWindow):
         self.bm_btn = self._tip(IconButton("bookmark", ""), "Bookmarks  (Ctrl B adds one)")
         self.bm_menu = QMenu(self.bm_btn)
         self.bm_menu.aboutToShow.connect(self._build_bookmark_menu)
-        self.bm_btn.setMenu(self.bm_menu)
-        self.bm_btn.setPopupMode(QToolButton.InstantPopup)
+        _menu_button(self.bm_btn, self.bm_menu)
         self.bm_btn.setStyleSheet(self.bm_btn.styleSheet() + "QToolButton::menu-indicator { image: none; }")
         b_export = self._tip(IconButton("headphones", ""), "Save as audiobook (MP3)")
         b_export.clicked.connect(self._export_dialog)
@@ -522,6 +545,7 @@ class Main(QMainWindow):
         self.stage = Stage()
         self.stage.page.clicked.connect(self._clicked)
         self.stage.page.setAccessibleName(tr("Book page"))
+        self.stage.scroll.setAccessibleName(tr("Book page"))          # (the keyboard scrolls it)
         self.stage.scroll.viewport().installEventFilter(self)          # wheel: see eventFilter
         self.stage.scroll.verticalScrollBar().actionTriggered.connect(lambda _a: self._user_scrolled())
         col.addWidget(self.stage, 1)
@@ -550,8 +574,9 @@ class Main(QMainWindow):
         self.page_box.lineEdit().setAlignment(Qt.AlignCenter)
         self.page_box.lineEdit().setAccessibleName(tr("Page number"))
         self.page_box.setStyleSheet(f"""
-            QComboBox {{ background: {T.INK_3}; border: 1px solid {T.LINE}; border-radius: 9px; padding: 3px 4px; }}
+            QComboBox {{ background: {T.INK_3}; border: 1px solid {T.FIELD_EDGE}; border-radius: 9px; padding: 3px 4px; }}
             QComboBox:hover {{ border-color: #46526a; }}
+            QComboBox:focus {{ border-color: {T.GOLD}; }}
             QComboBox::drop-down {{ width: 20px; border: none; }}
             QComboBox::down-arrow {{ image: none; width: 0; }}
             QComboBox QAbstractItemView {{ background: {T.INK_2}; border: 1px solid {T.LINE};
@@ -572,7 +597,6 @@ class Main(QMainWindow):
         self.speed_btn.setFont(T.font(13, QFont.DemiBold))
         self.speed_btn.setCursor(Qt.PointingHandCursor)
         self.speed_btn.setFocusPolicy(Qt.TabFocus)
-        self.speed_btn.setPopupMode(QToolButton.InstantPopup)
         self._tip(self.speed_btn, "Reading speed")
         self.speed_btn.setStyleSheet(f"""QToolButton {{ border: none; border-radius: 14px; padding: 6px 10px; color: {T.TEXT}; }}
             QToolButton:hover {{ background: {T.INK_3}; }} QToolButton::menu-indicator {{ image: none; }}
@@ -585,7 +609,7 @@ class Main(QMainWindow):
             a.setChecked(s == 1.0)
             a.triggered.connect(lambda _c=False, v=s: self._set_speed(v))
             self.speed_actions.append((s, a))
-        self.speed_btn.setMenu(menu)
+        _menu_button(self.speed_btn, menu)
         self.lang_btn = QToolButton()
         self.lang_btn.setText("EN")
         self.lang_btn.setIcon(icons.icon("globe", T.TEXT_2, 18))
@@ -593,12 +617,11 @@ class Main(QMainWindow):
         self.lang_btn.setFont(T.font(13, QFont.DemiBold))
         self.lang_btn.setCursor(Qt.PointingHandCursor)
         self.lang_btn.setFocusPolicy(Qt.TabFocus)
-        self.lang_btn.setPopupMode(QToolButton.InstantPopup)
         self._tip(self.lang_btn, "Language and voice")
         self.lang_btn.setStyleSheet(self.speed_btn.styleSheet())
         self.lang_menu = QMenu(self.lang_btn)
         self.lang_menu.aboutToShow.connect(self._build_lang_menu)
-        self.lang_btn.setMenu(self.lang_menu)
+        _menu_button(self.lang_btn, self.lang_menu)
         for w in (b_back30, b_prev, self.play_btn, b_next, b_fwd30):
             bar.addWidget(w)
         bar.addWidget(Divider(h=34))
@@ -621,12 +644,11 @@ class Main(QMainWindow):
         self.sleep_btn.setFont(T.font(13, QFont.DemiBold))
         self.sleep_btn.setCursor(Qt.PointingHandCursor)
         self.sleep_btn.setFocusPolicy(Qt.TabFocus)
-        self.sleep_btn.setPopupMode(QToolButton.InstantPopup)
         self.sleep_btn.setStyleSheet(self.speed_btn.styleSheet())
         self._tip(self.sleep_btn, "Sleep timer")
         self.sleep_menu = QMenu(self.sleep_btn)
         self.sleep_menu.aboutToShow.connect(self._build_sleep_menu)
-        self.sleep_btn.setMenu(self.sleep_menu)
+        _menu_button(self.sleep_btn, self.sleep_menu)
         self._sleep = None                  # {"kind": "time", "left": s} | {"kind": "chapter", "index": i}
         self._sleep_last = time.time()
         bar.addWidget(self.lang_btn)
@@ -651,9 +673,9 @@ class Main(QMainWindow):
         b.setFont(T.font(13, QFont.DemiBold))
         b.setCursor(Qt.PointingHandCursor)
         b.setFocusPolicy(Qt.TabFocus)
-        b.setPopupMode(QToolButton.InstantPopup)
         b.setStyleSheet(f"""QToolButton {{ border: none; border-radius: 14px; padding: 6px 10px; color: {T.TEXT_2}; }}
-            QToolButton:hover {{ background: {T.INK_3}; color: {T.TEXT}; }} QToolButton::menu-indicator {{ image: none; }}""")
+            QToolButton:hover {{ background: {T.INK_3}; color: {T.TEXT}; }} QToolButton::menu-indicator {{ image: none; }}
+            QToolButton:focus {{ border: 2px solid {T.GOLD}; }}""")
         menu = QMenu(b)
         for code in i18n.UI_LANGS:
             a = menu.addAction(i18n.AUTONYM[code])
@@ -661,7 +683,7 @@ class Main(QMainWindow):
             a.triggered.connect(lambda _c=False, c=code: self._set_ui_language(c))
         menu.aboutToShow.connect(lambda m=menu: [a.setChecked(i18n.UI_LANGS[k] == i18n.language())
                                                  for k, a in enumerate(m.actions())])
-        b.setMenu(menu)
+        _menu_button(b, menu)
         b.setText(i18n.AUTONYM[i18n.language()])
         self._tip(b, "Interface language")
         self._lang_buttons.append(b)
@@ -872,6 +894,7 @@ class Main(QMainWindow):
         self._refresh_welcome()
         self.stack.setCurrentWidget(self.welcome)
 
+    @opens_window
     def _about(self, check=False, install=False):
         AboutDialog(self, check=check, install=install).exec()
 
@@ -1105,6 +1128,7 @@ class Main(QMainWindow):
         save_settings(self.settings)
         self._refresh_welcome()
 
+    @opens_window
     def _open_voice_picker(self, first_run=False):
         lang = self.book.lang if self.book else None
         priority = [i18n.language(), lang, self.target, "en"] + [s[:2] for s in voices.installed()] + list(TARGETS)
@@ -1154,7 +1178,7 @@ class Main(QMainWindow):
     TURN_HOLD = 0.25         # s the push must last (a free-spinning wheel can't turn by itself)
     TURN_FORGET = 0.9        # s without scrolling and the push starts over
     ARRIVE_SETTLE = 0.5      # s after a turn when the wheel moves nothing (the spin that turned the page)
-    ARRIVE_PUSH = 240        # then two more notches before the new page scrolls (Neal: a gap on arrival too)
+    ARRIVE_PUSH = 240        # then two more notches before the new page scrolls (a pause on arrival as well)
     ARRIVE_FORGET = 1.5      # s after a turn when that's over: a fresh scroll scrolls at once
 
     def _wheel_turn(self, dy):
@@ -1207,6 +1231,7 @@ class Main(QMainWindow):
                 self.stage.toast.show_message(tr("Auto-scroll paused — it resumes in a few seconds, or press the target button"), ms=2500)
             self._follow_pause_until = time.time() + 6.0
 
+    @opens_window
     def _open_dialog(self):
         filt = convert.OPEN_FILTER.replace("Readable files", tr("Readable files")).replace("All files", tr("All files"))
         # the latest book's folder, else Documents (not the folder BookTalker was started in:
@@ -1338,6 +1363,7 @@ class Main(QMainWindow):
             self.player = Player(self.models.get_speaker, self.book, self.models.translator,
                                  self.voice, self.translate, self.book.nllb, self.book.lang)
             self.player.speed = self.speed
+            self.player.priors = self._paces            # each voice's pace starts where it left off
 
     # ---- language & voice ------------------------------------------------------------------
     def _update_lang_button(self):
@@ -1497,9 +1523,9 @@ class Main(QMainWindow):
     SPEED_POWER = 0.6       # MEASURED: 1.3× is only 1.3^0.6 ≈ 1.17× quicker (pauses don't speed up)
 
     def _listen_index(self):
-        """Once every page is prepared: (places, letters, pauses) — each sentence's (page, y) in
-        reading order and the letters and pause seconds before it (one more entry: the end).
-        None before that."""
+        """Once every page is prepared: (places, letters, pauses, keys) — each sentence's (page, y)
+        in reading order, the letters and pause seconds before it (one more entry: the end), and
+        each sentence key's place in that order. None before that."""
         b = self.book
         if not b or not b.prepared():
             return None
@@ -1507,16 +1533,17 @@ class Main(QMainWindow):
             return self._listen[2]
         with b.lock:
             pages = dict(b.page_sents)
-        places, letters, pauses = [], [0], [0.0]
+        places, letters, pauses, keys = [], [0], [0.0], {}
         for p in range(b.page_count):
             for s in pages.get(p, ()):
                 y = s.words[0].rects[0][2] if s.words and s.words[0].rects else 0
                 if b.end_at and (p, y) >= b.end_at:            # a Project Gutenberg license: not read
                     break
+                keys[s.key] = len(places)
                 places.append((p, y))
                 letters.append(letters[-1] + sum(c.isalpha() for w in s.words for c in w.say))
                 pauses.append(pauses[-1] + s.pause)
-        self._listen = (b, b.code_mode, (places, letters, pauses))
+        self._listen = (b, b.code_mode, (places, letters, pauses, keys))
         return self._listen[2]
 
     def _pace(self):
@@ -1533,7 +1560,7 @@ class Main(QMainWindow):
 
     def _listen_seconds(self, idx, a, b):
         """Listening time from sentence a to sentence b (indexes into the listening index)."""
-        _places, letters, pauses = idx
+        letters, pauses = idx[1], idx[2]
         return (letters[b] - letters[a]) * self._pace() + pauses[b] - pauses[a]
 
     def _chapter_span(self, idx, k):
@@ -1555,46 +1582,79 @@ class Main(QMainWindow):
             return tr("{n} min", n=mins) if unit else str(mins)
         return tr("{h} h {m}", h=mins // 60, m=f"{mins % 60:02d}")
 
+    @staticmethod
+    def _clock(secs):
+        """'18:42', '1:02:05' (rounded up: 0:00 only at the very end)."""
+        s = max(0, int(-(-secs // 1)))
+        h, m, s = s // 3600, s // 60 % 60, s % 60
+        return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
     def _show_time(self):
-        """The listening time beside the page number: how far into this chapter, out of all of
-        it (click: of the whole book)."""
+        """The listening time left beside the page number: to the end of this chapter (click: of
+        the whole book). The audio the voice has made already counts exactly, the rest at the
+        voice's pace. While it reads it counts down a second a second, and a correction to the
+        estimate is spread over the time left, so it runs out when the chapter does."""
         idx = self._listen_index()
         if idx is None or not idx[0]:
             self.time_btn.hide()
             return
         import bisect
-        s = playing = self.player.state()[0] if self.player else None
+        places, keys = idx[0], idx[3]
+        ahead = self.player.ahead() if self.player else []
+        s = ahead[0][0] if ahead else None
         if s is None:                                   # not reading: where Play carries on from
             key = (self.player.current_key() if self.player else None) or self.resume_key
             s = self.book.get(key) if key else None
-        if hasattr(s, "words") and s.words and s.words[0].rects:
-            here = (s.words[0].rects[0][0], s.words[0].rects[0][2])
-        else:
-            here = (self.page, 0)
-        now = min(bisect.bisect_left(idx[0], here), len(idx[0]))
+        now = keys.get(getattr(s, "key", None))
+        if now is None:
+            if hasattr(s, "words") and s.words and s.words[0].rects:
+                here = (s.words[0].rects[0][0], s.words[0].rects[0][2])
+            else:
+                here = (self.page, 0)
+            now = min(bisect.bisect_left(places, here), len(places))
+        here = places[min(now, len(places) - 1)]
         k = max((i for i, c in enumerate(self._chapters or []) if (c[2], c[3]) <= (here[0], here[1] + 3)), default=-1)
         if self._time_scope == "chapter" and k >= 0:
             a, b = self._chapter_span(idx, k)
-            fmt = "{done} / {total} in chapter"
-            tip = "Listening time at this speed. Click for the whole book."
+            fmt = "{left} left in chapter"
+            tip = "Listening time left at this speed. Click for the whole book."
         else:
-            a, b = 0, len(idx[0])
-            fmt = "{done} / {total} in book"
-            tip = "Listening time at this speed. Click for this chapter." if self._chapters else \
-                  "Listening time at this speed."
-        done = self._listen_seconds(idx, a, max(a, min(now, b)))
-        if playing is not None and a <= now < b:        # and as far into this sentence as it has got
-            done += min(self.player.seconds_into_current(), self._listen_seconds(idx, now, now + 1))
-        total = self._listen_seconds(idx, a, b)
-        short = total < 3600 and done < 3600
-        span = f"{self._duration(done, unit=not short)} / {self._duration(total)}"
-        text = tr(fmt, done=self._duration(done, unit=not short), total=self._duration(total))
+            a, b = 0, len(places)
+            fmt = "{left} left in book"
+            tip = "Listening time left at this speed. Click for this chapter." if self._chapters else \
+                  "Listening time left at this speed."
+        left, at = 0.0, now
+        for sent, secs in ahead:                        # what is made: exact
+            if keys.get(sent.key) != at or not a <= at < b:
+                break
+            left, at = left + secs, at + 1
+        at = max(at, a)
+        if at < b:
+            left += self._listen_seconds(idx, at, b)    # the rest: at the voice's pace
+        t = time.time()
+        what = (self._time_scope, a, b, self.voice, self.speed)
+        reading = bool(ahead) and not self.player.paused
+        last = self._left
+        if last and last[0] == what and 0 <= now - last[3] <= 6:     # carrying on, no jump
+            shown = last[2]
+            if reading:
+                dt = t - last[1]
+                shown -= dt
+                shown += (left - shown) * min(1.0, dt / max(shown, 1.0))
+                shown = max(0.0, min(shown, last[2]))   # (never counting back up)
+        else:
+            shown = left
+        self._left = (what, t, shown, now)
+        clock = self._clock(shown)
+        text = tr(fmt, left=clock)
         # in a narrow window: the time without its words, else nothing (the tooltip has it all)
         room = self._titles.geometry().width() - self.sub_lbl.sizeHint().width()
         fm = self.time_btn.fontMetrics()
-        shown = next((t for t in ("  ·  " + text, "  ·  " + span) if fm.horizontalAdvance(t) + 6 <= room), "")
+        shown = next((x for x in ("  ·  " + text, "  ·  " + clock) if fm.horizontalAdvance(x) + 6 <= room), "")
         self.time_btn.setText(shown)
-        self.time_btn.setFixedWidth(fm.horizontalAdvance(shown) + 8 if shown else 0)   # right after the page
+        # (its width doesn't follow the digits as they count, so nothing beside it moves)
+        steady = shown.translate(str.maketrans("123456789", "000000000"))
+        self.time_btn.setFixedWidth(fm.horizontalAdvance(steady) + 8 if shown else 0)   # right after the page
         self.time_btn.setToolTip(text + "\n" + tr(tip))
         self.time_btn.setAccessibleName(text)
         self.time_btn.setVisible(bool(shown))
@@ -1694,6 +1754,7 @@ class Main(QMainWindow):
             self.settings.setdefault(doc_id(self.book.source), {})["bookmarks"] = marks
             save_settings(self.settings)
 
+    @opens_window
     def _add_bookmark(self, with_note):
         """A bookmark at the sentence being read (or the first one on the page shown)."""
         if not self.book:
@@ -1751,10 +1812,12 @@ class Main(QMainWindow):
                 self.player.start_key = None        # Play starts at the bookmark
                 self.player.finished = True
 
+    @opens_window
     def _bookmarks_dialog(self):
         BookmarksDialog(self, list(self._marks()), self._go_bookmark, self._save_marks).exec()
 
     # ---- save as audiobook ------------------------------------------------------------
+    @opens_window
     def _export_dialog(self):
         if not self.book:
             return
@@ -1803,6 +1866,7 @@ class Main(QMainWindow):
             if self.player:
                 self.player.set_mode(self.voice, self.translate, self.book.nllb, self.book.lang)
 
+    @opens_window
     def _set_quality(self, best):
         if best and not packs.ai_installed():
             gb = packs.AI_SIZE_MB / 1000

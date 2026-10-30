@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QHBox
 from . import theme as T
 from .about import _Card
 from .i18n import tr
-from .widgets import ElidedBox, PillButton, soft_shadow
+from .widgets import ElidedBox, PillButton, opens_window, soft_shadow
 
 CSS = f"""
 QLabel {{ color: {T.TEXT}; }}
@@ -20,15 +20,17 @@ QRadioButton::indicator:checked {{ border: 2px solid {T.GOLD};
 QCheckBox {{ color: {T.TEXT}; font-size: 13px; spacing: 8px; }}
 QCheckBox::indicator {{ width: 14px; height: 14px; border-radius: 4px; border: 2px solid {T.TEXT_3}; background: transparent; }}
 QCheckBox::indicator:checked {{ border: 2px solid {T.GOLD}; background: {T.GOLD}; }}
-QComboBox {{ background: {T.INK_3}; border: 1px solid {T.LINE}; border-radius: 8px; padding: 5px 8px; font-size: 13px; }}
+QComboBox {{ background: {T.INK_3}; border: 1px solid {T.FIELD_EDGE}; border-radius: 8px; padding: 5px 8px; font-size: 13px; }}
 QComboBox:disabled {{ color: {T.TEXT_3}; background: {T.INK_2}; }}
 QComboBox QAbstractItemView {{ background: {T.INK_2}; border: 1px solid {T.LINE};
     selection-background-color: {T.INK_3}; selection-color: {T.GOLD}; }}
 QListWidget {{ background: {T.INK_1}; border: 1px solid {T.LINE}; border-radius: 10px; padding: 4px; font-size: 13px; }}
-QPlainTextEdit {{ background: {T.INK_1}; color: {T.TEXT}; border: 1px solid {T.LINE}; border-radius: 10px; padding: 6px;
+QPlainTextEdit {{ background: {T.INK_1}; color: {T.TEXT}; border: 1px solid {T.FIELD_EDGE}; border-radius: 10px; padding: 6px;
     font-size: 13px; }}
 QListWidget::item {{ padding: 8px 6px; border-radius: 6px; }}
 QListWidget::item:selected {{ background: {T.INK_3}; color: {T.GOLD}; }}
+QRadioButton:focus, QCheckBox:focus {{ color: {T.GOLD}; }}
+QComboBox:focus, QPlainTextEdit:focus, QListWidget:focus {{ border-color: {T.GOLD}; }}
 QProgressBar {{ background: {T.INK_1}; border: 1px solid {T.LINE}; border-radius: 6px; height: 12px; text-align: center; }}
 QProgressBar::chunk {{ background: {T.GOLD}; border-radius: 5px; }}
 """
@@ -120,6 +122,8 @@ class ExportDialog(QDialog):
         lay.addWidget(self.all_btn)
         self.some_btn = QRadioButton(tr("Chapters:"))
         self.from_box, self.to_box = ElidedBox(), ElidedBox()
+        self.from_box.setAccessibleName(tr("First chapter"))       # what a screen reader announces
+        self.to_box.setAccessibleName(tr("Last chapter"))
         if chapters:
             for t in chapters:
                 self.from_box.addItem(t)
@@ -137,6 +141,7 @@ class ExportDialog(QDialog):
         lay.addWidget(_label(tr("Folder"), 12, QFont.DemiBold, T.TEXT_2))
         row = QHBoxLayout()
         self.folder = QLineEdit(folder or default_audiobook_folder())
+        self.folder.setAccessibleName(tr("Folder"))
         change = PillButton(tr("Change…"))
         change.setFixedHeight(34)
         change.clicked.connect(self._choose_folder)
@@ -152,6 +157,7 @@ class ExportDialog(QDialog):
         row = QHBoxLayout()
         self.list_btn = QCheckBox(tr("Make a playlist:"))
         self.list_box = QComboBox()
+        self.list_box.setAccessibleName(tr("Playlist type"))
         for kind, label in PLAYLISTS:
             self.list_box.addItem(label, kind)
         kinds = [k for k, _l in PLAYLISTS]
@@ -194,6 +200,7 @@ class ExportDialog(QDialog):
     def _show_where(self):
         self.where.setText(os.path.join(self.folder.text().strip(), self._name))
 
+    @opens_window
     def _choose_folder(self):
         d = QFileDialog.getExistingDirectory(self, tr("Save audiobooks in"), self.folder.text())
         if d:

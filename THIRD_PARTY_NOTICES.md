@@ -27,6 +27,7 @@ must replace the NLLB model (and check the Surya model's terms) first.
 | Part | License | Source |
 |---|---|---|
 | Other Piper voices (the voice picker shows each voice's license; some are public domain, some CC BY, some non-commercial or research-only) | per voice | https://huggingface.co/rhasspy/piper-voices — each voice's `MODEL_CARD` |
+| Kokoro-82M (timestamped ONNX model) and its voice style files — the Kokoro voices | Apache-2.0 | hexgrad, https://huggingface.co/hexgrad/Kokoro-82M ; ONNX conversion: onnx-community, https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped |
 | g2pW model and its lookup tables — how the Chinese voices Chaowen and Xiao Ya pronounce each character (fetched with those voices) | Apache-2.0 | Yi-Chang Chen, https://github.com/GitYCC/g2pW ; model file from the Piper project, https://huggingface.co/datasets/rhasspy/piper-checkpoints ; tables from the g2pW package, https://pypi.org/project/g2pw/ |
 | BERT Chinese word list (`vocab.txt` of bert-base-chinese, fetched with the same voices) | Apache-2.0 | Google, https://huggingface.co/google-bert/bert-base-chinese |
 | TLTK, its pronunciation part (`nlp.py` and seven dictionary files) — how the Thai voice pronounces (fetched with that voice; its license file is kept beside it) | BSD-3-Clause | Wirote Aroonmanakun, Dept. of Linguistics, Chulalongkorn University, https://pypi.org/project/tltk/ |
@@ -56,6 +57,9 @@ of these libraries.
 
 - `bt/piperx/phonemize_lithuanian.py`: taken unchanged (apart from its import lines) from piper1-gpl's
   main branch, https://github.com/OHF-voice/piper1-gpl , GPL-3.0-or-later.
+- `bt/kokoro.py`: the table turning espeak-ng's sounds into Kokoro's follows misaki's `espeak.py`
+  (hexgrad, https://github.com/hexgrad/misaki , Apache-2.0), changed to work without espeak's tie
+  marks; Kokoro's symbol numbers are those of the model's `tokenizer.json`.
 - `bt/piperx/bert_tokenizer.py`: written for BookTalker to give the same tokens as Hugging Face
   transformers' `BertTokenizer` (Apache-2.0, https://github.com/huggingface/transformers) for
   bert-base-chinese.

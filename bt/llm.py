@@ -317,7 +317,7 @@ def _plausible(src, out):
     return len(out.split()) <= 2 * len(src.split()) + 2
 
 
-def translate_titles(smart, titles, lang, src_code, target, book=False, about="", names=()):
+def translate_titles(smart, titles, lang, src_code, target, book=False, about="", names=(), ai=True, fast=True):
     """Chapter titles in the language being read. The AI, when it runs, translates them as lists
     (a title alone has no context: 'Действие первое' is 'Act One', not 'Action one'); otherwise
     the fast translator, in one batch. book: the book's own title (and author), given as published
@@ -325,10 +325,12 @@ def translate_titles(smart, titles, lang, src_code, target, book=False, about=""
     Round-the-World Journey in Eighty Days'). about: the book the chapters are from ('"Le tour du
     monde…" by Jules Verne'). names: the book's names of people and places (book_names): MEASURED,
     the fast translator turned the servant Passepartout into 'Everywhere' and 'Password', so a
-    title of its that loses a name keeps its original wording."""
+    title of its that loses a name keeps its original wording. ai=False: the fast translator only;
+    fast=False: the AI only (None when it can't give them all)."""
     into, name = lang_name(target), lang_name(lang)
     book_words = tuple(names)
-    if smart.best and smart.engine.status in ("gpu", "cpu") and titles and book:
+    ai = ai and smart.best and smart.engine.status in ("gpu", "cpu")
+    if ai and titles and book:
         msgs = [{"role": "system", "content":
                  f"Line 1 is the title of a {name} book" + (", line 2 its author" if len(titles) > 1 else "") +
                  f". Give the title it is published under in {into} (translate it only if it has none)" +
@@ -341,7 +343,7 @@ def translate_titles(smart, titles, lang, src_code, target, book=False, about=""
                 return text
         except Exception:
             pass
-    elif smart.best and smart.engine.status in ("gpu", "cpu") and titles:
+    elif ai and titles:
         # 30 at a time, each given time by its length: MEASURED 37 titles took 54 s on an RX 580
         # (a single 60 s request, shared with the reading, ran out and was lost)
         done = []
@@ -363,6 +365,8 @@ def translate_titles(smart, titles, lang, src_code, target, book=False, about=""
             done += text
         if len(done) == len(titles):
             return done
+    if not fast:
+        return None
     tgt = LANGS.get(target, ("eng_Latn",))[0]
     # names copied letter for letter: Latin-letter names into a Latin-letter language (a Russian
     # 'Иван' is rightly written 'Ivan', and a French 'Paris' 'Париж')
@@ -421,16 +425,30 @@ def _clean_list(text):
 
 
 def titles_in_steps(smart, titles, lang, src_code, target, emit, book=False, about="", names=()):
-    """Titles in the language being read: the fast translation at once, then, when the AI was
-    still starting, its better one as soon as it is ready ('Action one' -> 'Act One')."""
+    """Titles in the language being read: the AI's when it is running and gives them all;
+    else the fast translation at once, then the AI's as soon as it can ('Action one' -> 'Act
+    One'). (MEASURED: an AI busy reading let a 36-title list run out of time, and the fast list,
+    half of it left in French to keep its names, stayed for good.)"""
     had_ai = smart.best and smart.engine.status in ("gpu", "cpu")
-    out = translate_titles(smart, titles, lang, src_code, target, book, about, names)
+    out = translate_titles(smart, titles, lang, src_code, target, book, about, names, fast=False) if had_ai else None
     if out:
         emit(out)
-    if had_ai or not smart.best or not smart.engine.available() or smart.engine.status == "failed":
         return
-    smart.engine.start()
-    if smart.engine.ready.wait(180) and smart.engine.status in ("gpu", "cpu"):
-        better = translate_titles(smart, titles, lang, src_code, target, book, about, names)
-        if better and better != out:
-            emit(better)
+    out = translate_titles(smart, titles, lang, src_code, target, book, about, names, ai=False)
+    if out:
+        emit(out)
+    if not smart.best or not smart.engine.available() or smart.engine.status == "failed":
+        return
+    if not had_ai:
+        smart.engine.start()
+        if not smart.engine.ready.wait(180):
+            return
+    for _try in range(4):                       # the AI busy reading: asked again a little later
+        if not smart.best or smart.engine.status not in ("gpu", "cpu"):
+            return
+        better = translate_titles(smart, titles, lang, src_code, target, book, about, names, fast=False)
+        if better:
+            if better != out:
+                emit(better)
+            return
+        time.sleep(30)

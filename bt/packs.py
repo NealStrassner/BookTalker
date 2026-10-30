@@ -191,6 +191,13 @@ def ai_items():
 
 
 def voice_items(stem):
+    from . import kokoro
+    if stem in kokoro.VOICES:           # its style file, and the shared model if it isn't here yet
+        vid = kokoro.VOICES[stem][0]
+        items = [(kokoro.VOICE_URL.format(id=vid), packs_dir("kokoro", "voices", vid + ".bin"), False)]
+        if not os.path.exists(packs_dir("kokoro", "model.onnx")):
+            items.insert(0, (kokoro.MODEL_URL, packs_dir("kokoro", "model.onnx"), False))
+        return items
     url = voice_url(stem)
     items = [(url, packs_dir("voices", stem + ".onnx"), False),
              (url + ".json", packs_dir("voices", stem + ".onnx.json"), False)]
