@@ -1,4 +1,4 @@
-"""Choose voices (and the AI translator): tick to download, untick a downloaded voice to remove
+"""Choose voices (and the best translator): tick to download, untick a downloaded one to remove
 it. Shown on first run and from 'More voices…' / 'More languages…'. Also the one-voice DownloadPrompt."""
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
@@ -188,13 +188,13 @@ class VoicePicker(QDialog):
         col.addWidget(head)
         fast_have = packs.translator_dir() is not None
         ai_have = packs.ai_installed()
-        ai_row = VoiceRow(AI, ai_have, ai_have, ai_have,
-                          tr("AI translator — best quality, needs a graphics card") + f"  ({packs.AI_SIZE_MB} MB)")
+        ai_row = VoiceRow(AI, ai_have, False, ai_have,      # (unticked: removed, like a downloaded voice)
+                          tr("Best translator — needs a graphics card") + f"  ({packs.AI_SIZE_MB} MB)")
         tr_rows = [ai_row]
         if not fast_have:       # (built in: only offered if it's missing, e.g. a build made without it)
             tr_rows.insert(0, VoiceRow(FAST, False, False, False,
                                        tr("Fast translator — hear books in another language") + f"  ({packs.TRANSLATOR_SIZE_MB} MB)"))
-            ai_row.setToolTip(tr("Includes the fast translator, which reads while the AI starts and on computers without a graphics card."))
+            ai_row.setToolTip(tr("Includes the fast translator, which reads while the best translator starts and on computers without a graphics card."))
         for r in tr_rows:
             r.changed.connect(self._update_summary)
             col.addWidget(r)
@@ -276,9 +276,13 @@ class VoicePicker(QDialog):
     # ---- applying ---------------------------------------------------------------
     def _apply(self):
         add, drop = self._plan()
+        kokoro_coming = any(voices.is_kokoro(s) for s in add)
         for stem in drop:
+            if stem == AI:                      # (the window stops its engine, then deletes it: Main._remove_ai)
+                self.removed.append(stem)
+                continue
             try:
-                voices.remove(stem)
+                voices.remove(stem, keep_model=kokoro_coming)
                 self.removed.append(stem)
             except OSError:
                 self.failed_remove.append(stem)

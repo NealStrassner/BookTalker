@@ -134,7 +134,16 @@ def nice_title(text, lang="en"):
     if m and ROMAN.match(m.group("num")) and (len(m.group("num")) > 1 or m.group("sep").strip()):
         rest = _title_case(m.group("rest"))
         return f"{m.group('num')} — {rest[:1].upper() + rest[1:]}"
-    return t[:1].upper() + t[1:] if t[:1].islower() else t
+    return lead_cap(t)
+
+
+def lead_cap(t):
+    """A title's name starts with a capital, after its number too: '4 melnā sotna' -> '4 Melnā
+    sotna', '12 the stone gate' -> '12 The stone gate'."""
+    m = re.match(r"^(?:\d+[.):]?\s+)?(?=[^\W\d_])", t)
+    if m and t[m.end()].islower():
+        return t[:m.end()] + t[m.end()].upper() + t[m.end() + 1:]
+    return t
 
 
 # ---- 1. the book's own outline -------------------------------------------------------------

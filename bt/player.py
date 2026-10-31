@@ -44,6 +44,7 @@ class Player:
         self.start_key = None
         self.finished = False
         self.lengths = {}                   # sentence key -> seconds of audio (for rewinding)
+        self.listened = 0.0                 # seconds of voice played, not yet added to the total (take_listened)
         self.wake = threading.Event()
         self.stream = sd.OutputStream(samplerate=self.rate, channels=1, dtype="float32",
                                       callback=self._callback, blocksize=1024)
@@ -66,6 +67,12 @@ class Player:
 
     def set_paused(self, paused):
         self.paused = paused
+
+    def take_listened(self):
+        """The seconds of voice played since the last call (the About page's time listened)."""
+        with self.lock:
+            s, self.listened = self.listened, 0.0
+        return s
 
     def _restart_here(self):
         key = self.current_key()
@@ -212,6 +219,7 @@ class Player:
                         self.cur, self.pos = self.queue.popleft(), 0
                     else:
                         break       # hold on the finished sentence until the next is ready
+            self.listened += filled / self.rate
         if self.volume < 1.0:
             out *= self.volume
         self.wake.set()

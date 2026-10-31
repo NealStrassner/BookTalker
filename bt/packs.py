@@ -190,6 +190,15 @@ def ai_items():
     return items + translator_items()
 
 
+def remove_ai():
+    """Delete the best translator's model and engine (the fast translator stays). OSError while
+    its engine is still running."""
+    import shutil
+    for p in (packs_dir("models", "qwen"), packs_dir("engines", "llama")):
+        if os.path.isdir(p):
+            shutil.rmtree(p)
+
+
 def voice_items(stem):
     from . import kokoro
     if stem in kokoro.VOICES:           # its style file, and the shared model if it isn't here yet

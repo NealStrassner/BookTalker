@@ -222,6 +222,18 @@ class SmartTranslator:
         tgt = LANGS.get(self.target, ("eng_Latn",))[0]
         return self.nllb.translate(join_text([w.text for w in sentence.words]), code, tgt), "fast"
 
+    def reading_needs_ai(self):
+        """The reading's look-ahead isn't full yet: its sentences still need the AI."""
+        with self._cv:
+            return self.best and self._job is not None and self._ahead() < LOOKAHEAD
+
+    def wait_for_reading(self):
+        """Until the reading is LOOKAHEAD sentences ahead, or nothing is read. Other AI work (the
+        chapter titles) waits for it: MEASURED, 22 titles (43 s on an RX 580) asked as the reading
+        began slowed its sentences from 2-4 s to 9-16 s, and the voice stopped to wait."""
+        while self.reading_needs_ai():
+            time.sleep(0.5)
+
     def _ahead(self):
         """How many sentences the AI is ahead of the one last asked for (keys are
         (sentence key, target language))."""
@@ -318,6 +330,15 @@ def _plausible(src, out):
 
 
 def translate_titles(smart, titles, lang, src_code, target, book=False, about="", names=(), ai=True, fast=True):
+    """_translate_titles, each chapter title's name starting with a capital as the chapter list
+    shows it (a book printing some in small letters had them come back '4 the black sotna'); a
+    book's own title and author stay as published ('bell hooks')."""
+    from .chapters import lead_cap
+    out = _translate_titles(smart, titles, lang, src_code, target, book, about, names, ai, fast)
+    return [lead_cap(t) for t in out] if out and not book else out
+
+
+def _translate_titles(smart, titles, lang, src_code, target, book=False, about="", names=(), ai=True, fast=True):
     """Chapter titles in the language being read. The AI, when it runs, translates them as lists
     (a title alone has no context: 'Действие первое' is 'Act One', not 'Action one'); otherwise
     the fast translator, in one batch. book: the book's own title (and author), given as published
@@ -430,7 +451,8 @@ def titles_in_steps(smart, titles, lang, src_code, target, emit, book=False, abo
     One'). (MEASURED: an AI busy reading let a 36-title list run out of time, and the fast list,
     half of it left in French to keep its names, stayed for good.)"""
     had_ai = smart.best and smart.engine.status in ("gpu", "cpu")
-    out = translate_titles(smart, titles, lang, src_code, target, book, about, names, fast=False) if had_ai else None
+    first = had_ai and not smart.reading_needs_ai()         # (the reading comes first)
+    out = translate_titles(smart, titles, lang, src_code, target, book, about, names, fast=False) if first else None
     if out:
         emit(out)
         return
@@ -446,6 +468,7 @@ def titles_in_steps(smart, titles, lang, src_code, target, emit, book=False, abo
     for _try in range(4):                       # the AI busy reading: asked again a little later
         if not smart.best or smart.engine.status not in ("gpu", "cpu"):
             return
+        smart.wait_for_reading()
         better = translate_titles(smart, titles, lang, src_code, target, book, about, names, fast=False)
         if better:
             if better != out:

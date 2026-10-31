@@ -52,10 +52,10 @@ BOOK_PAGE = pymupdf.Rect(0, 0, 432, 648)      # 6 x 9 in, a trade-book page
 COMIC_MARK = "BookTalker comic"               # in a converted comic's keywords
 CODE_MARK = "BookTalker code"                 # in a converted source file's keywords
 CODE_PAGE = pymupdf.Rect(0, 0, 612, 792)      # wider pages, so lines of code rarely wrap
-CONVERT_VERSION = 6            # 2: RAR 4 long distances + filters fixed, Gutenberg license dropped; 3: code kept as code;
+CONVERT_VERSION = 7            # 2: RAR 4 long distances + filters fixed, Gutenberg license dropped; 3: code kept as code;
                                # 4: exact words kept for shaped scripts (layout.EXACT_WORDS); 5: quoted notes are
                                # not headings, a numbered chapter's name may end in ? or !; 6: WebP comic pages,
-                               # .nfo art dropped
+                               # .nfo art dropped; 7: no '€' for a no-break space in chapter titles (_toc_text)
 NEW_PAGE = "<!--bt:newpage-->"               # in our HTML: start a new page here (CSS page breaks hang the typesetter)
 NO_WINDOW = 0x08000000                         # CREATE_NO_WINDOW
 
@@ -121,6 +121,13 @@ def _apart(path, q):
         q.put(("done", to_pdf(path)))
     except Exception as e:      # noqa: BLE001 — reported to the window
         q.put(("error", str(e) or e.__class__.__name__))
+
+
+def _toc_text(title):
+    """A chapter title as the PDF outline keeps it. A title of Western letters only is stored in
+    PDF's own one-byte code, where a no-break space's byte reads back as '€' (MEASURED: an FB2's
+    '\\xa01 LIEDES KALNI' came back '€1 LIEDES KALNI', while '\\xa03 Dieva bērni' stayed whole)."""
+    return " ".join(title.replace("\xad", "").split())
 
 
 def _has_toc(pdf):
@@ -279,7 +286,7 @@ def _native(path, out):
     try:                                            # keep the book's chapters (EPUB/MOBI/FB2 contents)
         toc = src.get_toc(simple=True)
         if toc:
-            pdf.set_toc(toc)
+            pdf.set_toc([[lvl, _toc_text(t), *rest] for lvl, t, *rest in toc])
     except Exception:
         pass
     pdf.save(out, garbage=3, deflate=True)
@@ -787,7 +794,7 @@ def _typeset(body_html, out, is_html=True, page=BOOK_PAGE, images=None, title=No
     top = min((h[0] for h in heads), default=1)
     for lvl, text, pg, y in heads:                      # the headings become the book's chapters
         lvl = max(1, min(lvl - top + 1, last + 1))
-        toc.append([lvl, text[:120], pg, {"kind": pymupdf.LINK_GOTO, "page": pg - 1, "to": pymupdf.Point(0, y)}])
+        toc.append([lvl, _toc_text(text)[:120], pg, {"kind": pymupdf.LINK_GOTO, "page": pg - 1, "to": pymupdf.Point(0, y)}])
         last = lvl
     try:
         if toc:

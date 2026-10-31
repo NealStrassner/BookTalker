@@ -472,6 +472,7 @@ class Main(QMainWindow):
         self._left = None                           # the time left as last shown: (what, when, seconds, sentence)
         self.chapter_box.view().setItemDelegate(ChapterItems(self.chapter_box))
         self._title_cache = {}                      # (book, language) -> translated chapter titles
+        self._titles_asked = set()                  # (book, language, titles) already being translated
         self._book_title_tr = {}                    # (book, language) -> the book's title translated
         row.addWidget(self.chapter_box)
         row.addSpacing(8)
@@ -896,7 +897,9 @@ class Main(QMainWindow):
 
     @opens_window
     def _about(self, check=False, install=False):
-        AboutDialog(self, check=check, install=install).exec()
+        self._add_listened()
+        AboutDialog(self, check=check, install=install, listened=self.settings.get("listened_seconds", 0),
+                    on_reset=self._reset_listened).exec()
 
     def check_for_update(self):
         """A few seconds after opening, ask BookTalker's GitHub page quietly whether a newer
@@ -1008,7 +1011,11 @@ class Main(QMainWindow):
         self._fill_chapter_box()
         if chapters and self.translate and self.book.lang != self.target:
             book, target = self.book, self.target
-            if self._title_cache.get((id(book), target)) is None:
+            # (asked once: every change of voice, speed or mode refreshes the list, and MEASURED two
+            # 22-title requests at once took the AI from the reading for 43 s)
+            ask = (id(book), target, tuple(c[1] for c in chapters))
+            if self._title_cache.get((id(book), target)) is None and ask not in self._titles_asked:
+                self._titles_asked.add(ask)
                 author = ((book.doc.metadata or {}).get("author") or "").strip()
                 about = f'"{book_title(book)}"' + (f" by {author}" if author else "")   # (names stay names)
 
@@ -1146,6 +1153,8 @@ class Main(QMainWindow):
         if d.failed_remove:
             self.stage.toast.show_message(tr("Couldn't remove {names} while in use — restart BookTalker and try again",
                                              names=", ".join(voices.display_name(s) for s in d.failed_remove)), ms=6000)
+        if "ai" in d.removed:                            # the best translator unticked: stopped, then deleted
+            self._remove_ai()
         if "ai" in d.added:                              # the AI translator was just installed
             self.models.translator.best = True
             self.settings["translate_best"] = True
@@ -1154,6 +1163,27 @@ class Main(QMainWindow):
         if self.book and self.voice in d.removed:     # the voice reading now was removed
             self._choose_mode()
             self._apply_mode()
+
+    def _remove_ai(self):
+        """Delete the best translator; reading goes on with the fast one. Its engine is stopped first:
+        Windows won't delete a program that is running."""
+        smart = self.models.translator
+        smart.best = False
+        self.settings["translate_best"] = False
+        save_settings(self.settings)
+        smart.engine.stop()
+        smart.engine.status = "idle"
+        smart.engine.ready.clear()
+        for _try in range(20):                           # (its files are let go a moment after it stops)
+            try:
+                packs.remove_ai()
+                break
+            except OSError:
+                time.sleep(0.25)
+        else:
+            self.stage.toast.show_message(tr("Couldn't remove {names} while in use — restart BookTalker and try again",
+                                             names=tr("the best translator")), ms=6000)
+        self._follow_translation()
 
     def eventFilter(self, obj, event):
         """Scrolling the page while it reads: the voice carries on; only the automatic
@@ -1466,12 +1496,12 @@ class Main(QMainWindow):
             head.setEnabled(False)
             where = {"gpu": tr("on the graphics card"), "cpu": tr("on the processor"),
                      "failed": tr("needs a free graphics card")}.get(smart.engine.status, "")
-            a = m.addAction(tr("Best quality — AI translator") + (f"  ({where})" if where else ""))
+            a = m.addAction(tr("Best translator") + (f"  ({where})" if where else ""))
             a.setCheckable(True)
             a.setChecked(smart.best)
             a.setEnabled(smart.engine.status != "failed")
             a.triggered.connect(lambda: self._set_quality(True))
-            b = m.addAction(tr("Fast — lighter translator"))
+            b = m.addAction(tr("Fast translator"))
             b.setCheckable(True)
             b.setChecked(not smart.best)
             b.triggered.connect(lambda: self._set_quality(False))
@@ -1830,7 +1860,7 @@ class Main(QMainWindow):
                "translate": self.translate, "target": self.target, "best": self.models.translator.best,
                "code_mode": self.book.code_mode, "lang": self.book.lang if getattr(self.book, "lang_fixed", False) else None,
                "title": book_title(self.book), "author": (meta.get("author") or "").strip(),
-               "year": find_year(self.book.source, meta)}
+               "year": find_year(self.book.source, meta), "narrator": voices.display_name(self.voice)}
         titles = self._chapter_titles() if self.book.prepared() else []
         if self.translate and self.book.lang != self.target:
             # the audiobook's folder and files are named in the language it is read in
@@ -1871,13 +1901,13 @@ class Main(QMainWindow):
         if best and not packs.ai_installed():
             gb = packs.AI_SIZE_MB / 1000
             ok = QMessageBox.question(
-                self, tr("Download the AI translator?"),
+                self, tr("Download the best translator?"),
                 tr("Best-quality translation uses Qwen3-4B (by Alibaba, free Apache license) running on this computer. "
                    "It is a one-time download of about {size} GB from Hugging Face, plus the llama.cpp engine from GitHub."
                    "\n\nDownload it now?", size=f"{gb:.1f}"))
             if ok != QMessageBox.Yes:
                 return
-            self._download(tr("the AI translator"), packs.ai_items(), lambda: self._set_quality(True))
+            self._download(tr("the best translator"), packs.ai_items(), lambda: self._set_quality(True))
             return
         self.models.translator.best = best
         self.settings["translate_best"] = best
@@ -2020,6 +2050,19 @@ class Main(QMainWindow):
                 r["page"] = key[0]
         self._pace()                                            # (picks up the latest measurement)
         self.settings["voice_pace"] = self._paces               # the next book's times start right
+        self._add_listened()
+        save_settings(self.settings)
+
+    def _add_listened(self):
+        """The voice played since last time, added to the total the About page shows. -> any?"""
+        s = self.player.take_listened() if self.player else 0
+        if s:
+            self.settings["listened_seconds"] = self.settings.get("listened_seconds", 0) + s
+        return bool(s)
+
+    def _reset_listened(self):
+        self._add_listened()                                    # (what played meanwhile goes too)
+        self.settings["listened_seconds"] = 0
         save_settings(self.settings)
 
     def _voice_ready(self):
@@ -2080,7 +2123,7 @@ class Main(QMainWindow):
             tr_ok = st in ("gpu", "cpu", "failed") or (
                 self._ready_at is not None and time.time() - self._ready_at > 45)
             detail = tr({"gpu": "graphics card", "cpu": "processor", "failed": "fast mode"}.get(st, "starting"))
-            steps.append((tr("Starting the AI translator"), "done" if tr_ok else "active", detail))
+            steps.append((tr("Starting the best translator"), "done" if tr_ok else "active", detail))
             fraction += 0.2 if tr_ok else 0.05
         else:
             fraction += 0.2
@@ -2202,6 +2245,10 @@ class Main(QMainWindow):
         if now - getattr(self, "_time_at", 0) >= 1:          # the listening time, once a second
             self._time_at = now
             self._show_time()
+            if now - getattr(self, "_listened_at", 0) >= 60:  # the time listened, kept once a minute
+                self._listened_at = now
+                if self._add_listened():
+                    save_settings(self.settings)
             if now - getattr(self, "_times_at", 0) >= 20 and not self.chapter_box.view().isVisible():
                 self._times_at = now                           # chapter times as the voice's pace settles
                 self._label_chapter_times()

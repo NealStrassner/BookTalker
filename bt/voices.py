@@ -137,9 +137,10 @@ def recommended(lang):
     return stems[0] if stems else None
 
 
-def remove(stem):
+def remove(stem, keep_model=False):
     """Delete a downloaded voice (never a bundled one); the Kokoro model goes with the last
-    Kokoro voice."""
+    Kokoro voice, unless keep_model (another Kokoro voice is on its way: one swapped for another
+    deleted the 325 MB model and downloaded it again)."""
     from .packs import packs_dir
     if bundled(stem):
         return
@@ -147,7 +148,7 @@ def remove(stem):
         p = packs_dir("kokoro", "voices", kokoro.VOICES[stem][0] + ".bin")
         if os.path.exists(p):
             os.remove(p)
-        if not glob.glob(packs_dir("kokoro", "voices", "*.bin")) and kokoro_model():
+        if not keep_model and not glob.glob(packs_dir("kokoro", "voices", "*.bin")) and kokoro_model():
             os.remove(kokoro_model())
         return
     for ext in (".onnx", ".ort", ".onnx.json"):

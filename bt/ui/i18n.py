@@ -195,9 +195,8 @@ T = {
 "TRANSLATE INTO": dict(es="TRADUCIR AL", fr="TRADUIRE EN", de="ÜBERSETZEN IN", it="TRADURRE IN", pt="TRADUZIR PARA", ru="ПЕРЕВОДИТЬ НА", zh="翻译成"),
 "VOICE": dict(es="VOZ", fr="VOIX", de="STIMME", it="VOCE", pt="VOZ", ru="ГОЛОС", zh="声音"),
 "TRANSLATION": dict(es="TRADUCCIÓN", fr="TRADUCTION", de="ÜBERSETZUNG", it="TRADUZIONE", pt="TRADUÇÃO", ru="ПЕРЕВОД", zh="翻译"),
-"Best quality — AI translator": dict(es="Máxima calidad: traductor con IA", fr="Meilleure qualité — traducteur IA",
-    de="Beste Qualität — KI-Übersetzer", it="Massima qualità — traduttore IA", pt="Melhor qualidade — tradutor com IA",
-    ru="Лучшее качество — ИИ-переводчик", zh="最佳质量——AI 翻译"),
+"Best translator": dict(es="El mejor traductor", fr="Meilleur traducteur", de="Bester Übersetzer",
+    it="Traduttore migliore", pt="Melhor tradutor", ru="Лучший переводчик", zh="最佳翻译"),
 "on the graphics card": dict(es="en la tarjeta gráfica", fr="sur la carte graphique", de="auf der Grafikkarte", it="sulla scheda grafica",
     pt="na placa de vídeo", ru="на видеокарте", zh="使用显卡"),
 "on the processor": dict(es="en el procesador", fr="sur le processeur", de="auf dem Prozessor", it="sul processore", pt="no processador",
@@ -206,8 +205,8 @@ T = {
     it="non disponibile su questo PC", pt="indisponível neste PC", ru="недоступно на этом ПК", zh="此电脑不可用"),
 "download {size} GB": dict(es="descargar {size} GB", fr="télécharger {size} Go", de="{size} GB laden", it="scarica {size} GB",
     pt="baixar {size} GB", ru="скачать {size} ГБ", zh="下载 {size} GB"),
-"Fast — lighter translator": dict(es="Rápido: traductor ligero", fr="Rapide — traducteur léger", de="Schnell — leichter Übersetzer",
-    it="Veloce — traduttore leggero", pt="Rápido — tradutor leve", ru="Быстро — облегчённый переводчик", zh="快速——轻量翻译"),
+"Fast translator": dict(es="Traductor rápido", fr="Traducteur rapide", de="Schneller Übersetzer",
+    it="Traduttore veloce", pt="Tradutor rápido", ru="Быстрый переводчик", zh="快速翻译"),
 # sleep timer
 "Sleep timer": dict(es="Temporizador de sueño", fr="Minuterie de sommeil", de="Einschlaftimer", it="Timer di spegnimento",
     pt="Temporizador para dormir", ru="Таймер сна", zh="睡眠定时"),
@@ -386,8 +385,9 @@ T = {
 "woman": dict(es="mujer", fr="femme", de="Frau", it="donna", pt="mulher", ru="женский", zh="女声"),
 "man": dict(es="hombre", fr="homme", de="Mann", it="uomo", pt="homem", ru="мужской", zh="男声"),
 # dialogs
-"Download the AI translator?": dict(es="¿Descargar el traductor con IA?", fr="Télécharger le traducteur IA ?", de="KI-Übersetzer herunterladen?",
-    it="Scaricare il traduttore IA?", pt="Baixar o tradutor com IA?", ru="Скачать ИИ-переводчик?", zh="下载 AI 翻译？"),
+"Download the best translator?": dict(es="¿Descargar el mejor traductor?", fr="Télécharger le meilleur traducteur ?",
+    de="Den besten Übersetzer herunterladen?", it="Scaricare il traduttore migliore?", pt="Baixar o melhor tradutor?",
+    ru="Скачать лучший переводчик?", zh="下载最佳翻译？"),
 "Best-quality translation uses Qwen3-4B (by Alibaba, free Apache license) running on this computer. It is a one-time download of about {size} GB from Hugging Face, plus the llama.cpp engine from GitHub.\n\nDownload it now?": dict(
     es="La traducción de máxima calidad usa Qwen3-4B (de Alibaba, licencia libre Apache) en este equipo. Es una descarga única de unos {size} GB desde Hugging Face, más el motor llama.cpp desde GitHub.\n\n¿Descargarlo ahora?",
     fr="La traduction de meilleure qualité utilise Qwen3-4B (d’Alibaba, licence libre Apache) sur cet ordinateur. Il s’agit d’un téléchargement unique d’environ {size} Go depuis Hugging Face, plus le moteur llama.cpp depuis GitHub.\n\nLe télécharger maintenant ?",
@@ -556,8 +556,8 @@ T = {
 "Couldn’t open {name}: {err}": dict(es="No se pudo abrir {name}: {err}", fr="Impossible d’ouvrir {name} : {err}",
     de="{name} konnte nicht geöffnet werden: {err}", it="Impossibile aprire {name}: {err}", pt="Não foi possível abrir {name}: {err}",
     ru="Не удалось открыть {name}: {err}", zh="无法打开 {name}：{err}"),
-"the AI translator": dict(es="el traductor con IA", fr="le traducteur IA", de="den KI-Übersetzer", it="il traduttore IA",
-    pt="o tradutor com IA", ru="ИИ-переводчик", zh="AI 翻译"),
+"the best translator": dict(es="el mejor traductor", fr="le meilleur traducteur", de="den besten Übersetzer",
+    it="il traduttore migliore", pt="o melhor tradutor", ru="лучший переводчик", zh="最佳翻译"),
 "the {name} voice": dict(es="la voz {name}", fr="la voix {name}", de="die Stimme {name}", it="la voce {name}", pt="a voz {name}",
     ru="голос {name}", zh="声音“{name}”"),
 "Auto-scroll paused — it resumes in a few seconds, or press the target button": dict(
@@ -597,8 +597,9 @@ T = {
     it="{known} di {total} pagine", pt="{known} de {total} páginas", ru="{known} из {total} стр.", zh="{known} / {total} 页"),
 "Warming up the voice": dict(es="Preparando la voz", fr="Préparation de la voix", de="Stimme wird vorbereitet", it="Preparazione della voce",
     pt="Preparando a voz", ru="Готовим голос", zh="正在准备声音"),
-"Starting the AI translator": dict(es="Iniciando el traductor con IA", fr="Démarrage du traducteur IA", de="KI-Übersetzer wird gestartet",
-    it="Avvio del traduttore IA", pt="Iniciando o tradutor com IA", ru="Запускаем ИИ-переводчик", zh="正在启动 AI 翻译"),
+"Starting the best translator": dict(es="Iniciando el mejor traductor", fr="Démarrage du meilleur traducteur",
+    de="Der beste Übersetzer wird gestartet", it="Avvio del traduttore migliore", pt="Iniciando o melhor tradutor",
+    ru="Запускаем лучший переводчик", zh="正在启动最佳翻译"),
 "graphics card": dict(es="tarjeta gráfica", fr="carte graphique", de="Grafikkarte", it="scheda grafica", pt="placa de vídeo", ru="видеокарта", zh="显卡"),
 "processor": dict(es="procesador", fr="processeur", de="Prozessor", it="processore", pt="processador", ru="процессор", zh="处理器"),
 "fast mode": dict(es="modo rápido", fr="mode rapide", de="Schnellmodus", it="modalità veloce", pt="modo rápido", ru="быстрый режим", zh="快速模式"),
@@ -678,18 +679,18 @@ T = {
     fr="Traducteur rapide — écouter des livres dans une autre langue", de="Schneller Übersetzer — Bücher in einer anderen Sprache hören",
     it="Traduttore veloce — ascolta libri in un’altra lingua", pt="Tradutor rápido — ouvir livros noutra língua",
     ru="Быстрый переводчик — слушать книги на другом языке", zh="快速翻译 — 用另一种语言听书"),
-"AI translator — best quality, needs a graphics card": dict(es="Traductor IA — la mejor calidad, necesita tarjeta gráfica",
-    fr="Traducteur IA — la meilleure qualité, carte graphique requise", de="KI-Übersetzer — beste Qualität, braucht eine Grafikkarte",
-    it="Traduttore IA — la migliore qualità, serve una scheda grafica", pt="Tradutor IA — a melhor qualidade, precisa de placa gráfica",
-    ru="ИИ-переводчик — лучшее качество, нужна видеокарта", zh="AI 翻译 — 最佳质量，需要显卡"),
-"Includes the fast translator, which reads while the AI starts and on computers without a graphics card.": dict(
-    es="Incluye el traductor rápido, que lee mientras arranca la IA y en equipos sin tarjeta gráfica.",
-    fr="Inclut le traducteur rapide, qui lit pendant le démarrage de l’IA et sur les ordinateurs sans carte graphique.",
-    de="Enthält den schnellen Übersetzer, der liest, während die KI startet, und auf Computern ohne Grafikkarte.",
-    it="Include il traduttore veloce, che legge mentre l’IA si avvia e sui computer senza scheda grafica.",
-    pt="Inclui o tradutor rápido, que lê enquanto a IA arranca e em computadores sem placa gráfica.",
-    ru="Включает быстрый переводчик: он читает, пока запускается ИИ, и на компьютерах без видеокарты.",
-    zh="包含快速翻译：在 AI 启动时以及没有显卡的电脑上由它朗读。"),
+"Best translator — needs a graphics card": dict(es="El mejor traductor — necesita tarjeta gráfica",
+    fr="Meilleur traducteur — carte graphique requise", de="Bester Übersetzer — braucht eine Grafikkarte",
+    it="Traduttore migliore — serve una scheda grafica", pt="Melhor tradutor — precisa de placa gráfica",
+    ru="Лучший переводчик — нужна видеокарта", zh="最佳翻译 — 需要显卡"),
+"Includes the fast translator, which reads while the best translator starts and on computers without a graphics card.": dict(
+    es="Incluye el traductor rápido, que lee mientras arranca el mejor traductor y en equipos sin tarjeta gráfica.",
+    fr="Inclut le traducteur rapide, qui lit pendant le démarrage du meilleur traducteur et sur les ordinateurs sans carte graphique.",
+    de="Enthält den schnellen Übersetzer, der liest, während der beste Übersetzer startet, und auf Computern ohne Grafikkarte.",
+    it="Include il traduttore veloce, che legge mentre si avvia il traduttore migliore e sui computer senza scheda grafica.",
+    pt="Inclui o tradutor rápido, que lê enquanto o melhor tradutor arranca e em computadores sem placa gráfica.",
+    ru="Включает быстрый переводчик: он читает, пока запускается лучший переводчик, и на компьютерах без видеокарты.",
+    zh="包含快速翻译：在最佳翻译启动时以及没有显卡的电脑上由它朗读。"),
 "download translator, {mb} MB": dict(es="descargar traductor, {mb} MB", fr="télécharger le traducteur, {mb} Mo",
     de="Übersetzer laden, {mb} MB", it="scarica il traduttore, {mb} MB", pt="transferir tradutor, {mb} MB",
     ru="загрузить переводчик, {mb} МБ", zh="下载翻译器，{mb} MB"),
@@ -719,6 +720,20 @@ T = {
     ru="Открывает PDF, EPUB, файлы Word и PowerPoint, обычный текст и сканы, читает их естественным голосом и подсвечивает каждое слово на странице в момент, когда оно звучит. Программа понимает страницу: пропускает колонтитулы, номера страниц и подписи к рисункам, соединяет слова, разорванные переносом, и ведёт предложения через колонки и страницы. Книги примерно на 120 языках можно слушать в оригинале или в переводе прямо во время чтения.",
     zh="可打开 PDF、EPUB、Word 和 PowerPoint 文件、纯文本以及扫描页面，用自然的声音朗读，并在页面上高亮显示正在朗读的每个字。它能理解页面：跳过页眉、页脚、页码和图注，把跨行断开的单词重新连起来，让句子跨栏、跨页连贯朗读。约 120 种语言的书籍都可以听原文，或在收听时翻译成其他语言。"),
 "KEYBOARD": dict(es="TECLADO", fr="CLAVIER", de="TASTATUR", it="TASTIERA", pt="TECLADO", ru="КЛАВИАТУРА", zh="键盘"),
+"TIME LISTENED": dict(es="TIEMPO ESCUCHADO", fr="TEMPS D’ÉCOUTE", de="HÖRZEIT", it="TEMPO DI ASCOLTO",
+    pt="TEMPO OUVIDO", ru="ВРЕМЯ ПРОСЛУШИВАНИЯ", zh="收听时长"),
+"Reset": dict(es="Poner a cero", fr="Remettre à zéro", de="Zurücksetzen", it="Azzera", pt="Zerar", ru="Сбросить", zh="清零"),
+"Reset the time listened?": dict(es="¿Poner a cero el tiempo escuchado?", fr="Remettre à zéro le temps d’écoute ?",
+    de="Hörzeit zurücksetzen?", it="Azzerare il tempo di ascolto?", pt="Zerar o tempo ouvido?",
+    ru="Сбросить время прослушивания?", zh="将收听时长清零？"),
+"Your total of {time} goes back to zero. This can't be undone.": dict(
+    es="Tu total de {time} vuelve a cero. No se puede deshacer.",
+    fr="Votre total de {time} revient à zéro. C’est définitif.",
+    de="Deine Gesamtzeit von {time} wird auf null gesetzt. Das lässt sich nicht rückgängig machen.",
+    it="Il totale di {time} torna a zero. Non si può annullare.",
+    pt="O seu total de {time} volta a zero. Não é possível desfazer.",
+    ru="Общее время ({time}) обнулится. Отменить это нельзя.",
+    zh="总计 {time} 将清零，且无法撤销。"),
 "Space": dict(es="Espacio", fr="Espace", de="Leertaste", it="Spazio", pt="Espaço", ru="Пробел", zh="空格"),
 "Click a word": dict(es="Clic en una palabra", fr="Clic sur un mot", de="Klick auf ein Wort", it="Clic su una parola",
     pt="Clique numa palavra", ru="Щелчок по слову", zh="点击一个字"),
@@ -777,6 +792,39 @@ def language():
 def tr(text, **values):
     s = T.get(text, {}).get(_lang) or T.get(text, {}).get("en") or text
     return s.format(**values) if values else s
+
+
+# week, day, hour, minute: singular and plural (Russian: 1 / 2-4 / 5+; Chinese has one form)
+UNITS = {
+    "en": (("week", "weeks"), ("day", "days"), ("hour", "hours"), ("minute", "minutes")),
+    "es": (("semana", "semanas"), ("día", "días"), ("hora", "horas"), ("minuto", "minutos")),
+    "fr": (("semaine", "semaines"), ("jour", "jours"), ("heure", "heures"), ("minute", "minutes")),
+    "de": (("Woche", "Wochen"), ("Tag", "Tage"), ("Stunde", "Stunden"), ("Minute", "Minuten")),
+    "it": (("settimana", "settimane"), ("giorno", "giorni"), ("ora", "ore"), ("minuto", "minuti")),
+    "pt": (("semana", "semanas"), ("dia", "dias"), ("hora", "horas"), ("minuto", "minutos")),
+    "ru": (("неделя", "недели", "недель"), ("день", "дня", "дней"), ("час", "часа", "часов"),
+           ("минута", "минуты", "минут")),
+    "zh": (("周",), ("天",), ("小时",), ("分钟",)),
+}
+
+
+def _form(forms, n):
+    if len(forms) == 1:
+        return forms[0]
+    if len(forms) == 3:
+        return forms[0] if n % 10 == 1 and n % 100 != 11 else (
+            forms[1] if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else forms[2])
+    return forms[0] if n == 1 or (n == 0 and _lang == "fr") else forms[1]
+
+
+def duration(seconds):
+    """'2 weeks, 3 days, 4 hours, 12 minutes': only the units it needs (never '0 days'), down to
+    the minute; '0 minutes' at first."""
+    m = int(seconds // 60)
+    parts = [(m // 10080, 0), (m // 1440 % 7, 1), (m // 60 % 24, 2), (m % 60, 3)]
+    units = UNITS.get(_lang, UNITS["en"])
+    shown = [f"{n} {_form(units[u], n)}" for n, u in parts if n] or [f"0 {_form(units[3], 0)}"]
+    return (" " if _lang == "zh" else ", ").join(shown)
 
 
 def lang_label(code, lower=False):

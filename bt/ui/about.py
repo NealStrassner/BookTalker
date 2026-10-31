@@ -8,10 +8,10 @@ from PySide6.QtWidgets import QDialog, QGridLayout, QHBoxLayout, QLabel, QVBoxLa
 from ..packs import REPO
 from ..paths import resource
 from . import theme as T
-from .i18n import tr
+from .i18n import duration, tr
 from .widgets import IconButton, PillButton, opens_window, soft_shadow
 
-VERSION = "1.0.9"
+VERSION = "1.0.10"
 AUTHOR = "Neal Strassner"
 KOFI = "https://ko-fi.com/nealstrassner"         # tips for the author (BookTalker itself stays free)
 SHORTCUTS = [("Space", "Play / pause"), ("← →", "Previous / next sentence"),
@@ -197,7 +197,9 @@ class _UpdateSignals(QObject):
 
 
 class AboutDialog(QDialog):
-    def __init__(self, parent=None, check=False, install=False):
+    def __init__(self, parent=None, check=False, install=False, listened=None, on_reset=None):
+        """listened: the total seconds of voice heard (shown, with Reset, when given); on_reset()
+        sets it back to zero after the reader confirms."""
         super().__init__(parent)
         self._sig = _UpdateSignals(self)
         self._sig.checked.connect(self._checked)
@@ -288,6 +290,29 @@ class AboutDialog(QDialog):
             grid.addWidget(key, i // 2, (i % 2) * 2, Qt.AlignLeft)
             grid.addWidget(lab, i // 2, (i % 2) * 2 + 1, Qt.AlignLeft)
         lay.addLayout(grid)
+        if listened is not None:
+            lay.addSpacing(18)
+            sec = QLabel(tr("TIME LISTENED"))
+            sec.setFont(T.font(11, QFont.DemiBold, T.DISPLAY, 2.0))
+            sec.setStyleSheet(f"color: {T.GOLD};")
+            lay.addWidget(sec)
+            lay.addSpacing(6)
+            row = QHBoxLayout()
+            self._listened, self._on_reset = listened, on_reset
+            self.listened_lbl = QLabel(duration(listened))
+            self.listened_lbl.setFont(T.font(14, QFont.DemiBold))
+            row.addWidget(self.listened_lbl)
+            row.addSpacing(14)
+            reset = QLabel(f"<a href='reset' style='color: {T.TEXT_2}; text-decoration: underline;'>{tr('Reset')}</a>")
+            reset.setFont(T.font(12))
+            reset.setTextFormat(Qt.RichText)
+            reset.setTextInteractionFlags(Qt.LinksAccessibleByMouse | Qt.LinksAccessibleByKeyboard)   # (Tab, then Enter)
+            reset.setAccessibleName(tr("Reset the time listened?"))
+            reset.linkActivated.connect(lambda _l: self._reset_listened())
+            row.addWidget(reset)
+            row.addStretch()
+            lay.addLayout(row)
+            lay.addSpacing(12)
         lay.addStretch()
         cred = QLabel(tr("CREDITS"))
         cred.setWordWrap(True)
@@ -318,10 +343,21 @@ class AboutDialog(QDialog):
         row.addWidget(ok)
         lay.addLayout(row)
         # some languages need more room for the shortcut list: widen rather than cut
-        self.setFixedSize(max(700, self.sizeHint().width()), 800)
+        self.setFixedSize(max(700, self.sizeHint().width()), max(800, self.sizeHint().height()))   # (taller with the time listened)
         self._install_now = install                   # (the reader already said yes to the update)
         if check:                                     # (opened from 'a new version is out')
             QTimer.singleShot(0, self._update_clicked)
+
+    def _reset_listened(self):
+        """Back to zero only after a 'Reset' in the question (Esc or Cancel keeps the total)."""
+        ask = Notice(tr("Reset the time listened?"),
+                     tr("Your total of {time} goes back to zero. This can't be undone.", time=duration(self._listened)),
+                     tr("Reset"), tr("Cancel"), self)
+        if ask.exec() == QDialog.Accepted:
+            if self._on_reset:
+                self._on_reset()
+            self._listened = 0
+            self.listened_lbl.setText(duration(0))
 
     # ---- updates (BookTalker asks GitHub's release list only; nothing downloads unasked) ---
     def _note(self, text):

@@ -52,6 +52,55 @@ def folder_name(title, author, year):
     return safe_name(name, 120)
 
 
+def save_cover(pdf, folder, source="", page_words=0):
+    """The book's cover beside its chapters as cover.jpg (or .png), which audiobook players and
+    libraries show (Audiobookshelf takes an image in the book's folder): a Kindle book's own
+    cover, else the picture filling the first page, as an e-book's or comic's cover becomes
+    when the book is opened, or a scanned cover. A first page of text (page_words: the words
+    read on it, scanned pages included) has no cover to save. -> the file's path, or None."""
+    try:
+        import pymupdf
+        if os.path.splitext(source)[1].lower() in (".mobi", ".azw3", ".azw", ".kf8", ".prc"):
+            from .mobi import cover
+            found = cover(source)
+            if found:
+                data, kind = found
+                if kind == "gif":
+                    path = os.path.join(folder, "cover.png")
+                    pymupdf.Pixmap(data).save(path)
+                else:
+                    path = os.path.join(folder, "cover." + kind)
+                    with open(path, "wb") as f:
+                        f.write(data)
+                return path
+        if page_words > 40:
+            return None
+        with pymupdf.open(pdf) as doc:
+            page = doc[0]
+            if len(page.get_text().strip()) > 40:
+                return None
+            area = page.rect.width * page.rect.height
+            best = None
+            for img in page.get_images(full=True):
+                for r in page.get_image_rects(img[0]):
+                    share = r.width * r.height / area
+                    if share >= 0.4 and (best is None or share > best[0]):
+                        best = (share, img[0], r)
+            if best is None:
+                return None
+            pic = doc.extract_image(best[1])
+            if pic.get("ext") in ("jpeg", "jpg", "png") and pic.get("colorspace", 3) in (1, 3) and not pic.get("smask"):
+                path = os.path.join(folder, "cover." + ("png" if pic["ext"] == "png" else "jpg"))
+                with open(path, "wb") as f:
+                    f.write(pic["image"])
+            else:                               # (CMYK, a mask, JPEG 2000, a fax scan: drawn as seen)
+                path = os.path.join(folder, "cover.jpg")
+                page.get_pixmap(clip=best[2], dpi=200, alpha=False).save(path, jpg_quality=90)
+            return path
+    except Exception:
+        return None
+
+
 def plan(book, titles=None):
     """-> ([(title, (page, y) where it starts)] for the whole book, index of chapter 1 in it):
     its chapters, or parts of PAGES_PER_PART pages. Text before the first chapter (a title page,
@@ -238,6 +287,8 @@ def _run(job, q):
         translator.set_target(job["target"])
     folder = os.path.join(job["out_root"], folder_name(job["title"], job.get("author"), job.get("year")))
     os.makedirs(folder, exist_ok=True)
+    words = sum(len(s.words) for s in _sentences(book, (0, 0), (1, 0)))      # (a scanned page's too)
+    cover = save_cover(job["pdf"], folder, job["source"], words)
     Writer = _writer()
     width = max(2, len(str(len(lists))))
     done, files, tracks = 0, [], []
@@ -246,7 +297,8 @@ def _run(job, q):
         q.put(("file", n, title))
         name = f"{n:0{width}d} - {safe_name(title)}{Writer.ext}"
         path = os.path.join(folder, name)
-        tags = [("TIT2", title), ("TALB", job["title"]), ("TPE1", job.get("author")),
+        # (audiobook libraries read the narrator from the composer tag, Audiobookshelf among them)
+        tags = [("TIT2", title), ("TALB", job["title"]), ("TPE1", job.get("author")), ("TCOM", job.get("narrator")),
                 ("TRCK", f"{n}/{len(lists)}"), ("TYER", job.get("year")), ("TCON", "Audiobook")]
         out = Writer(path + ".part", speaker.rate, tags)
         if translator:
@@ -271,6 +323,8 @@ def _run(job, q):
     if translator:
         translator.shutdown()
     book.close()
+    if cover:
+        files.append(cover)
     if job.get("playlist") and tracks:
         files.append(write_playlist(job["playlist"], folder, tracks, job["title"], job.get("author")))
     q.put(("done", folder, files))

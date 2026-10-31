@@ -205,6 +205,43 @@ def _unk_free(text):
     return re.sub(r"\s*⁇\s*", " ", text).strip()
 
 
+# Names the translator can't carry it replaces with famous ones: MEASURED in a Latvian book,
+# 'Edvarda Liedskalniņa' -> 'Edward Snowden', 'Vidzemē' -> 'Vietnam', a list of names -> 'Harry Potter
+# and the Prisoner of Azkaban'. Such a name is held as a stand-in it copies (XQZ: 17 of 18 came
+# through, numbers 15, made-up names 14) and put back. Latvian only: in French and Russian the same
+# check held words it had translated right ('Sa Gracieuse Majesté', 'Петрович').
+HOLD_NAMES = {"lvs_Latn"}
+WORD = re.compile(r"[^\W\d_][\w'’-]*")
+
+
+def _flat(w):
+    import unicodedata
+    w = re.sub(r"['’]s$", "", w.lower())
+    return "".join(c for c in unicodedata.normalize("NFD", w) if unicodedata.category(c) != "Mn")
+
+
+def _alike(a, b):
+    """The same name in two languages ('Edvarda' / 'Edward', 'Sibīriju' / 'Siberia')."""
+    from difflib import SequenceMatcher
+    a, b = _flat(a), _flat(b)
+    return (len(a) >= 4 and len(b) >= 4 and a[:4] == b[:4]) or SequenceMatcher(None, a, b).ratio() >= 0.65
+
+
+def _capitals(text):
+    """Words with a capital inside a sentence (not its first, not after a quote or colon, not ALL CAPS)."""
+    out = []
+    for m in WORD.finditer(text):
+        w, before = m.group(), text[:m.start()].rstrip()
+        if before and before[-1] not in "\"'“„«(:—–-.!?" and w[0].isupper() and not (len(w) > 1 and w.isupper()):
+            out.append(w.rstrip("'’-"))
+    return out
+
+
+def _base(name):
+    """A Latvian place name as English writes it: 'Vidzemē' (in), 'Vidzemes' (of) -> 'Vidzeme'."""
+    return re.sub(r"(ā|ās|as)$", "a", re.sub(r"(ē|ēs|es)$", "e", name)) if len(name) > 4 else name
+
+
 class Translator:
     """Loads on first use; thread-safe; caches every sentence it translates."""
 
@@ -232,6 +269,42 @@ class Translator:
         self._sp = spm.SentencePieceProcessor(model_file=d + "/sentencepiece.bpe.model")
 
     def translate(self, text, src_code, tgt_code="eng_Latn"):
+        first = self._one(text, src_code, tgt_code)
+        if src_code not in HOLD_NAMES or not tgt_code.endswith("_Latn"):
+            return first
+        key = ("held", text, src_code, tgt_code)
+        if key not in self._cache:
+            self._cache[key] = self._hold_names(text, first, src_code, tgt_code)
+        return self._cache[key]
+
+    def _hold_names(self, text, first, src_code, tgt_code):
+        """The translation again with the names it lost held as stand-ins, when it wrote names of
+        its own in their place ('Snowden': like no word in the sentence, nor anything its names
+        mean alone, as 'Krievijā' -> 'In Russia' does)."""
+        lost = [n for n in dict.fromkeys(_capitals(text)) if not any(_alike(n, w) for w in WORD.findall(first))]
+        if not lost:
+            return first
+        alone = dict(zip(lost, self.translate_many(lost, src_code, tgt_code)))
+        caps = _capitals(first)
+        # (known: its meaning alone starts a word of the translation, 'Ēģiptes' -> 'Egypt' beside
+        # 'Egyptian'; looking alike isn't enough: a made-up 'Other' resembles 'Potter')
+        unknown = [n for n in lost if not any(w[0].isupper() and len(w) > 2 and any(c.startswith(w) for c in caps)
+                                              for w in WORD.findall(alone[n]))]
+        meant = {w for n in lost for w in WORD.findall(alone[n])}
+        words = WORD.findall(text)
+        if not unknown or not any(w != "I" and w not in meant and not any(_alike(w, s) for s in words) for w in caps):
+            return first
+        held, marks = text, []
+        for i, n in enumerate(unknown):
+            m = "X" + "QRSTUVWY"[i % 8] + "Z" * (1 + i // 8)
+            held = re.sub(r"(?<!\w)" + re.escape(n) + r"(?!\w)", m, held)
+            marks.append((m, n))
+        out = self._one(held, src_code, tgt_code)
+        for m, n in marks:
+            out = re.sub(r"(?<!\w)" + re.escape(m) + r"(?!\w)", _base(n), out)
+        return out
+
+    def _one(self, text, src_code, tgt_code):
         key = (text, src_code, tgt_code)
         if key in self._cache:
             return self._cache[key]

@@ -238,6 +238,33 @@ def _image_kind(b):
     return None
 
 
+def cover(path):
+    """A Kindle book's cover picture, which its text never shows (the EXTH header's record 201
+    holds its place among the images) -> (bytes, 'jpg' | 'png' | 'gif'), or None."""
+    db = PalmDB(open(path, "rb").read())
+    r0 = db.record(0)
+    if db.kind != b"BOOKMOBI" or r0[16:20] != b"MOBI":
+        return None
+    hdr_len, = struct.unpack_from(">L", r0, 20)
+    first_res, = struct.unpack_from(">L", r0, 0x6C)
+    flags, = struct.unpack_from(">L", r0, 0x80)
+    at = 16 + hdr_len
+    if not flags & 0x40 or r0[at:at + 4] != b"EXTH":
+        return None
+    count, = struct.unpack_from(">L", r0, at + 8)
+    p = at + 12
+    for _ in range(count):
+        kind, size = struct.unpack_from(">LL", r0, p)
+        if kind == 201:
+            rec = first_res + struct.unpack_from(">L", r0, p + 8)[0]
+            if 0 < rec < len(db):
+                b = db.record(rec)
+                return (b, _image_kind(b)) if _image_kind(b) else None
+            return None
+        p += size
+    return None
+
+
 def read(path):
     """-> (html, title, {image name: bytes}) for a Kindle/Palm book."""
     data = open(path, "rb").read()
