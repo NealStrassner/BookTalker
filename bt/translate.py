@@ -242,6 +242,16 @@ def _base(name):
     return re.sub(r"(ā|ās|as)$", "a", re.sub(r"(ē|ēs|es)$", "e", name)) if len(name) > 4 else name
 
 
+def _forms(base):
+    """A Latvian name's cases from its base form: 'Vidzeme' -> Vidzemes, Vidzemei, Vidzemi, Vidzemē."""
+    if len(base) < 4:
+        return []
+    for end, cases in (("e", ("es", "ei", "i", "ē")), ("a", ("as", "ai", "u", "ā")), ("s", ("a", "am", "u", "ā"))):
+        if base.endswith(end):
+            return [base[:-1] + c for c in cases]
+    return []
+
+
 class Translator:
     """Loads on first use; thread-safe; caches every sentence it translates."""
 
@@ -277,10 +287,39 @@ class Translator:
             self._cache[key] = self._hold_names(text, first, src_code, tgt_code)
         return self._cache[key]
 
+    def _swap_names(self, text, first, src_code, tgt_code):
+        """The translation with each place or person the model turned into a famous one of its own
+        given back its name, in the model's own sentence: the model means 'Vietnam' by 'Vidzemē'
+        alone too, so the 'Vietnam' (or 'Vietnamese') it wrote stands for 'Vidzeme'. A meaning
+        that goes back into the book's language as the name is a true translation ('Krievijā' ->
+        'Russia' -> 'Krievija'). (MEASURED with the 1.3B model: 7 of 506 sentences of a Latvian
+        book had 'Vietnam' for Vidzeme; holding the name as a stand-in instead broke the grammar,
+        'martial law was lifted in Vidzeme' -> 'the Vidzeme was abolished'.)"""
+        names = list(dict.fromkeys(_capitals(text)))
+        if not names:
+            return first
+        # each name in all its cases: the model's own name for it may show in one only ('Vidzemē',
+        # in Vidzeme, -> 'In Vietnam'; 'Vidzemes', of Vidzeme, -> 'The environment')
+        forms = {n: list(dict.fromkeys([n] + _forms(_base(n)))) for n in names}
+        every = [f for fs in forms.values() for f in fs]
+        alone = dict(zip(every, self.translate_many(every, src_code, tgt_code)))
+        out = first
+        for n in names:
+            for v in dict.fromkeys(w for f in forms[n] for w in WORD.findall(alone[f])):
+                if not v[0].isupper() or len(v) < 4 or _alike(n, v) or v.lower() in text.lower():
+                    continue
+                if not any(c.startswith(v) for c in _capitals(out)):
+                    continue                                    # (a name inside the sentence, not 'Others' starting it)
+                if any(_alike(n, b) for b in WORD.findall(self._one(v, tgt_code, src_code))):
+                    continue                                    # a true translation of the name
+                out = re.sub(r"(?<!\w)" + re.escape(v) + r"\w*", _base(n), out)
+        return out
+
     def _hold_names(self, text, first, src_code, tgt_code):
         """The translation again with the names it lost held as stand-ins, when it wrote names of
         its own in their place ('Snowden': like no word in the sentence, nor anything its names
         mean alone, as 'Krievijā' -> 'In Russia' does)."""
+        first = self._swap_names(text, first, src_code, tgt_code)
         lost = [n for n in dict.fromkeys(_capitals(text)) if not any(_alike(n, w) for w in WORD.findall(first))]
         if not lost:
             return first
@@ -302,7 +341,7 @@ class Translator:
         out = self._one(held, src_code, tgt_code)
         for m, n in marks:
             out = re.sub(r"(?<!\w)" + re.escape(m) + r"(?!\w)", _base(n), out)
-        return out
+        return self._swap_names(text, out, src_code, tgt_code)     # (the new sentence may make the same slip)
 
     def _one(self, text, src_code, tgt_code):
         key = (text, src_code, tgt_code)

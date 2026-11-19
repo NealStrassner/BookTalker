@@ -3,6 +3,7 @@ import os
 import re
 import statistics
 import threading
+import time
 import unicodedata
 
 import pymupdf
@@ -72,6 +73,8 @@ class Book:
         self.page_sents = {}                   # page -> [Sentence] (published)
         self.code_mode = code_mode             # computer code: explain | verbatim | skip (bt/code.py)
         self.has_code = False                  # code found on a page read so far
+        self.waited_at = 0.0                   # when the reading last found its next page not ready
+        self.glyphs = {}                       # letter a font left unknown -> ligatures read for it (reflow._fix_glyphs)
         self.on_update = on_update
         self._refresh(set(self.cache.pages))
         self._check_language()
@@ -156,7 +159,7 @@ class Book:
                 layout = {q: known[q] for q in run}
             if not self.has_code and any(b["label"] == "Code" for b in layout[p]["blocks"]):
                 self.has_code = True
-            new[p] = [s for s in build_sentences(run, layout, self.lang, self.code_mode) if s.page == p]
+            new[p] = [s for s in build_sentences(run, layout, self.lang, self.code_mode, self.glyphs) if s.page == p]
         with self.lock:
             self.page_sents.update(new)
 
@@ -201,6 +204,7 @@ class Book:
                 sents = self.page_sents.get(page)
             if sents is None:
                 self.want(page)
+                self.waited_at = time.monotonic()      # (the reading is held up: bt/layout._give_way)
                 return "wait"
             for s in sents:
                 if page > key[0] or s.key >= key:
@@ -308,7 +312,8 @@ class Book:
         except Exception:
             outline = []
         toc = work_out(outline, pages, labels, self.page_count, self.lang,
-                       page_text=lambda p: self.doc[p].get_text())
+                       page_text=lambda p: self.doc[p].get_text(),
+                       page_words=lambda p: self.doc[p].get_text("words"))
         cut = next((i for i, c in enumerate(toc) if i and LICENSE.search(c[1])), None)
         if cut is not None:                    # the license and anything after it are left out
             self.end_at = (toc[cut][2], toc[cut][3])

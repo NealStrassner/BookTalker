@@ -193,9 +193,9 @@ want to reuse BookTalker:
 
 1. Install Python 3.12 and [uv](https://github.com/astral-sh/uv).
 2. `uv venv .venv --python 3.12`, then `uv pip install --python .venv\Scripts\python.exe -r requirements.txt`.
-3. Download `build-models.zip` and `nllb-200-distilled-600M-int8.zip` from the `models-1` release.
-   Unpack the first into this folder (it fills `models/` and `voices/`) and the second into
-   `models\nllb-600m-int8\`.
+3. Download `build-models.zip` from the `models-1` release and `nllb-200-distilled-1.3B-int8.zip` from
+   the `models-2` release. Unpack the first into this folder (it fills `models/` and `voices/`) and the
+   second into `models\nllb-1.3b-int8\`.
 4. Run `build.bat`. The program is written to `dist\BookTalker\`.
 5. Install [Inno Setup 6](https://jrsoftware.org/isinfo.php) and run
    `ISCC.exe installer\BookTalker.iss`. The installer is written to `installer\Output\`.

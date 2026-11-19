@@ -113,7 +113,12 @@ def _unquote(t):
 
 
 def nice_title(text, lang="en"):
-    t = " ".join(text.split()).strip(" .·•-–—:")
+    from .reflow import _fix_glyphs                     # (letters a font left unknown: reflow)
+    t = " ".join(r[5] for r in _fix_glyphs([(0, 0, 0, 0, 0, w, 0, 0) for w in text.split()], lang))
+    t = t.strip(" .·•-–—:")
+    # a scan's 'l' for a capital I at a word's start ('lntervals')
+    t = re.sub(r"\bl([a-z]{3,})\b", lambda m: ("I" if m.start() == 0 else "i") + m.group(1)
+               if _zipf("i" + m.group(1), lang) - _zipf("l" + m.group(1), lang) >= 3.0 else m.group(), t)
     t = re.sub(r"[\s.·…_]{3,}\s*\d+\s*$", "", t)          # leader dots + page number
     t = re.sub(r"(?<=[^\W\d_] )8<(?= [^\W\d_])", "&", t)   # a scan's '&' ('Notes 8< References')
     t = fix_spacing(t, lang)
@@ -299,7 +304,7 @@ def _norm(t):
 # ---- 2. the printed table of contents --------------------------------------------------------
 STOP = re.compile(r"(?i)^\s*(list of )?(illustrations|figures|plates|maps|tables)\s*$|^\s*index\s*$")
 COLUMN_WORDS = re.compile(r"(?i)\b(page|pages|chap\.?|chapter|pág\.?|página|seite|стр\.?)\s*$|^\s*(page|chap\.?)\b")
-LEADS_NEW = re.compile(r"^\s*([IVXLCDM]{1,6}|\d{1,3})[.\s]|^\s*(chapter|part|book|chap\.)\b", re.I)
+LEADS_NEW = re.compile(r"^\s*([IVXLCDM]{1,6}|\d{1,3})[.\s]|^\s*(chapter|part|book|chap\.|appendix|annex)\b", re.I)
 # a page number may carry one misread letter from OCR ('4r')
 ENTRY = re.compile(r"^(?P<title>.*?\w.*?)[\s.·…_\-–]*\s(?P<page>\d{1,4}(?=[a-z]?\s*$)|[ivxlcdm]{1,7}\s*$)[a-z]?\s*$", re.I)
 
@@ -358,13 +363,46 @@ def _title_key(title):
     return _norm(rest)[:24]
 
 
-def from_contents(pages, labels, page_count, lang="en"):
+def _layer_lines(words):
+    """The PDF's own text layer (page.get_text("words")) as rows [(y, x, text, label)]."""
+    rows = {}
+    for x0, y0, _x1, _y1, t, b, ln, _n in words:
+        r = rows.setdefault((b, ln), [y0, x0, []])
+        r[0], r[1] = min(r[0], y0), min(r[1], x0)
+        r[2].append((x0, t))
+    return [(y, x, " ".join(t for _, t in sorted(ws)), "TableOfContents") for y, x, ws in sorted(rows.values())]
+
+
+def _joined_number(t):
+    """A contents line's page number set apart from its title: split by a stray space after the
+    leader dots ('.... 3 1'), touching them ('Giza………98'), or touching the title itself
+    ('Interpretation of the World Horoscope119'; not 'Chapter 12', not 'Psalm 23')."""
+    if re.search(r"[.…·_]{3,}", t):
+        t = re.sub(r"(?<=[.…·_] )(\d{1,3}) (\d{1,2})\s*$", r"\1\2", t)
+        t = re.sub(r"(?<=[.…·_])(\d{1,4})\s*$", r" \1", t)
+    return re.sub(r"(?<=[^\W\d_]{3})(\d{2,4})\s*$", r" \1", t)
+
+
+def from_contents(pages, labels, page_count, lang="en", layer=None):
+    """layer(page) -> the PDF's own words on a page: a contents page our OCR replaced is read
+    from them when they give more entries (MEASURED: a scan's OCR put the page-number column
+    out of step, 'VI: Modulation . ..86 115 VII: Construction', where its text layer was whole)."""
     cpages = _contents_pages(pages)
     if not cpages:
         return []
     rows, stop = [], False
     for p in cpages:
-        for y, x, t, label in _lines(pages[p]):
+        lines = _lines(pages[p])
+        if layer is not None and pages[p].get("replaced"):
+            try:
+                own = _layer_lines(layer(p))
+            except Exception:
+                own = []
+            count = lambda ls: sum(1 for _y, _x, t, _l in ls if ENTRY.match(_joined_number(t)))
+            if count(own) > count(lines):
+                lines = own
+        for y, x, t, label in lines:
+            t = _joined_number(t)
             if STOP.match(t):                                # the list of illustrations is not chapters
                 stop = True
                 break
@@ -423,13 +461,16 @@ def from_contents(pages, labels, page_count, lang="en"):
             d = pages.get(p)
             if not d or (near is not None and abs(p - near) > 3):
                 continue
-            top = [(ly, _norm(t)) for ly, _lx, t, _ in _lines(d, include_extra=False)[:5]]
-            # each chapter starts after the one before it (not inside the previous heading)
-            hit = next((ly for ly, t in top if (p, ly) > last and (key in t or (len(t) >= 6 and t in key))), None)
+            top = [(ly, _norm(t), lab) for ly, _lx, t, lab in _lines(d, include_extra=False)[:5]]
+            # each chapter starts after the one before it (not inside the previous heading), on a
+            # line that is a heading, not a sentence that names it (MEASURED: 'According to the
+            # Bible, Jesus' a page before 'Chapter Seven / The Bible')
+            hit = next((ly for ly, t, lab in top if (p, ly) > last and (
+                (key in t and (lab == "SectionHeader" or len(t) <= len(key) + 12)) or (len(t) >= 6 and t in key))), None)
             if hit is not None:
                 title_pages[k] = (p, hit)
                 full, end = _norm(title), hit
-                for ly, t in top:                            # the rest of a heading that wraps
+                for ly, t, _lab in top:                      # the rest of a heading that wraps
                     if ly > end and t and t in full:
                         end = ly
                     elif ly > end:
@@ -585,11 +626,12 @@ def _named_from_list(chs, items):
 
 
 # ---- choosing ----------------------------------------------------------------------------------
-def work_out(outline_rows, pages, labels, page_count, lang="en", page_text=None):
+def work_out(outline_rows, pages, labels, page_count, lang="en", page_text=None, page_words=None):
     """-> [(level, nice title, page, y)]: the best source, tidied; [] for a book without chapters.
-    page_text(page) -> the text the PDF itself carries on that page (none for scans)."""
+    page_text(page) -> the text the PDF itself carries on that page (none for scans);
+    page_words(page) -> the same as words (page.get_text("words"))."""
     for name, source in (("outline", lambda: from_outline(outline_rows, page_count)),
-                         ("contents", lambda: from_contents(pages, labels, page_count, lang)),
+                         ("contents", lambda: from_contents(pages, labels, page_count, lang, page_words)),
                          ("headings", lambda: from_headings(pages))):
         try:
             chs = source()

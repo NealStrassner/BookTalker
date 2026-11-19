@@ -19,6 +19,14 @@ import urllib.request
 from .paths import resource
 from .translate import LANGS, join_text, lang_name
 
+
+def source_words(sentence):
+    """A sentence's words as the translators get them: an astrology sign by its name in the
+    book's language ('♀' as 'Venus'), since neither translator knows the signs."""
+    from .astro import CHARS
+    return [w.say if CHARS.search(w.text) else w.text for w in sentence.words]
+
+
 MODEL = ("models", "qwen", "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
 NO_WINDOW = 0x08000000
 LOOKAHEAD = 12          # sentences translated ahead of the one being read
@@ -220,7 +228,7 @@ class SmartTranslator:
             if key in self.done:
                 return self.done[key], "ai"
         tgt = LANGS.get(self.target, ("eng_Latn",))[0]
-        return self.nllb.translate(join_text([w.text for w in sentence.words]), code, tgt), "fast"
+        return self.nllb.translate(join_text(source_words(sentence)), code, tgt), "fast"
 
     def reading_needs_ai(self):
         """The reading's look-ahead isn't full yet: its sentences still need the AI."""
@@ -271,7 +279,7 @@ class SmartTranslator:
                     key = sent.key
                     sent = book.next_after(key)
                     continue
-                src = join_text([w.text for w in sent.words])
+                src = join_text(source_words(sent))
                 k = (sent.key, target)
                 if k not in self.done:
                     try:

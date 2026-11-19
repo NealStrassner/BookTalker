@@ -276,6 +276,10 @@ class Stage(Canvas):
         self.scroll.setGeometry(self.rect())
         self.layout_overlays()
 
+    def bar_room(self):
+        """The height the floating transport bar takes at the bottom, with a gap above it."""
+        return 76 + 22 + 12
+
     def layout_overlays(self):
         w = min(940, self.width() - 40)
         self.transport.setGeometry((self.width() - w) // 2, self.height() - 76 - 22, w, 76)
@@ -344,7 +348,7 @@ class Main(QMainWindow):
         if any(self.settings.get(r.get("id"), {}).get("translate") for r in recent):
             QTimer.singleShot(3000, self.models.translator.warm_up)
         self.page = 0
-        self.zoom = None            # None = fit width
+        self.zoom = None            # None = the whole page fitted
         self.spread = bool(self.settings.get("spread"))     # two pages side by side, like a book
         self.follow = True
         self.shown = None
@@ -518,7 +522,7 @@ class Main(QMainWindow):
         self.zoom_lbl.setAlignment(Qt.AlignCenter)
         b_in = self._tip(IconButton("zoom_in", ""), "Zoom in  (Ctrl +)")
         b_in.clicked.connect(lambda: self._zoom(1.15))
-        b_fit = self._tip(IconButton("fit", ""), "Fit page width")
+        b_fit = self._tip(IconButton("fit", ""), "Fit the whole page")
         b_fit.clicked.connect(self._fit)
         self.b_spread = self._tip(IconButton("book", "", checkable=True), "Two pages side by side, like an open book")
         self.b_spread.setChecked(self.spread)
@@ -804,12 +808,15 @@ class Main(QMainWindow):
     def _effective_zoom(self):
         if self.zoom is not None or self.book is None:
             return self.zoom or 1.0
-        # fit the width, but never wider than a comfortable reading column (per page)
+        # the whole page (or spread) on screen: its width, never wider than a comfortable reading
+        # column per page, and its height down to the top of the floating transport bar
         pages = self._spread_pages()
         across = 2 if self.spread and self.book.page_count > 1 else 1   # (a cover alone keeps the spread's size)
         w = self.stage.scroll.width() - 2 * PageCanvas.MARGIN - 24 - PageCanvas.GUTTER * (across - 1)
         widths = sum(self.book.doc[p].rect.width for p in pages) * (across / len(pages))
-        return max(0.3, min(w, 940 * across) / widths)
+        h = self.stage.scroll.height() - PageCanvas.MARGIN - self.stage.bar_room()
+        tallest = max(self.book.doc[p].rect.height for p in pages)
+        return max(0.3, min(min(w, 940 * across) / widths, h / tallest))
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -1311,6 +1318,7 @@ class Main(QMainWindow):
         self._close_book()
         self.book = Book(pdf, self.models.layout, self.sig.pages_done.emit, source=source,
                          get_ocr=self.models.ocr, code_mode=self.settings.get("code_mode", "explain"))
+        self.book.worker.reading = self._reading_state          # (its pages give way to the voice)
         title = book_title(self.book)
         self.setWindowTitle(f"{title} — BookTalker")
         from .ui.widgets import announce
@@ -1386,6 +1394,17 @@ class Main(QMainWindow):
                        "page": self.page, "pages": self.book.page_count})
         self.settings["recents"] = rec[:12]
         save_settings(self.settings)
+
+    def _reading_state(self):
+        """(page being read, seconds of voice made ahead, held up for a page) while reading
+        aloud, else None (the page worker's question, from its own thread)."""
+        player, book = self.player, self.book
+        if player is None or book is None or player.paused or player.finished or player.start_key is None:
+            return None
+        ready = player.ahead()
+        key = player.current_key()
+        return ((key[0] if key else self.page), sum(sec for _s, sec in ready),
+                time.monotonic() - book.waited_at < 2.0)
 
     def _make_player(self):
         if self.book is not None and self.models.speaker is not None and self.player is None:

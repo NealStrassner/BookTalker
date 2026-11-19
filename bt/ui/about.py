@@ -11,7 +11,7 @@ from . import theme as T
 from .i18n import duration, tr
 from .widgets import IconButton, PillButton, opens_window, soft_shadow
 
-VERSION = "1.0.10"
+VERSION = "1.0.11"
 AUTHOR = "Neal Strassner"
 KOFI = "https://ko-fi.com/nealstrassner"         # tips for the author (BookTalker itself stays free)
 SHORTCUTS = [("Space", "Play / pause"), ("← →", "Previous / next sentence"),

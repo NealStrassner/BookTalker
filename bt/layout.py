@@ -612,6 +612,9 @@ def build_page(page, layout, words=None, comic=False, code=False):
             words = page.get_text("words", sort=False)
             if any(RTL_CHAR.search(w[4]) for w in words):
                 words = rtl_words(page, words)
+            from .astro import SYMBOL_CODE, fix_symbol_fonts
+            if any(SYMBOL_CODE.search(w[4]) for w in words):
+                words = fix_symbol_fonts(page, words)            # astrology signs in a font of their own
     if not ocr and not exact:
         words = fix_indic_order(fix_mojibake(drop_second_layer(words)))
     words = join_spaced_hangul(join_drop_caps(fix_rtl(drop_ruby(words))))
@@ -925,6 +928,8 @@ class LayoutWorker(threading.Thread):
     """Processes pages in the background, starting from the page the reader needs."""
 
     CHUNK = 4
+    NEAR = 4                # pages after the one being read that are always prepared first
+    GIVE_WAY = 15.0         # below this many seconds of voice made ahead, other pages wait
 
     def __init__(self, pdf_path, cache, get_model, on_progress, get_ocr=None, get_lang=None):
         super().__init__(daemon=True)
@@ -940,6 +945,12 @@ class LayoutWorker(threading.Thread):
         self.target = 0
         self.wake = threading.Event()
         self.stopped = False
+        # while reading aloud: () -> (page being read, seconds of voice made ahead, the reading
+        # held up for a page not ready), else None.
+        # The voice comes first: MEASURED on 4 processors, Kokoro reading a 274-page book while
+        # its pages were being prepared was silent 110 s of 180 (19 gaps of 2-13 s), 6 s once
+        # they were all prepared.
+        self.reading = None
 
     def want(self, page):
         self.target = page
@@ -977,6 +988,8 @@ class LayoutWorker(threading.Thread):
                 continue
             model = self.get_model()
             for p in todo:
+                while not self.stopped and self._give_way(p):
+                    time.sleep(0.25)
                 try:
                     result = self.process(p, model)
                 except Exception:               # one page that can't be read never stops the book
@@ -995,6 +1008,22 @@ class LayoutWorker(threading.Thread):
                     return
             dirty = True
             self.on_progress(todo)
+
+    def _give_way(self, p):
+        """The voice is short of made-up speech while the pages just after the one being read
+        are ready: the rest wait (unless the reading itself waits for a page, as after blank
+        pages)."""
+        try:
+            r = self.reading() if self.reading else None
+        except Exception:
+            return False
+        if r is None:
+            return False
+        page, ready, held = r
+        if ready >= self.GIVE_WAY or held:
+            return False
+        with self.cache.lock:
+            return all(q in self.cache.pages for q in range(page, min(page + self.NEAR + 1, self.cache.page_count)))
 
     def process(self, p, model):
         """One page -> its layout dict (text layer, or our OCR when the page is a scan or its

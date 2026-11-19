@@ -338,11 +338,13 @@ def _join_hyphens(raw, lang="en"):
     return out
 
 
-def _spoken(pairs):
+def _spoken(pairs, lang="en"):
     """Fill in Word.say: expand abbreviations, symbols and dashes for the voice. Web addresses
     are shown and highlighted but not read out (one that wraps onto the next line carries on
-    in pieces with '/' in them)."""
+    in pieces with '/' in them). Astrology signs are named (bt/astro.py)."""
+    from . import astro
     url = False
+    sky = None
     for i, (w, _) in enumerate(pairs):
         t = unicodedata.normalize("NFKC", w.text)      # ligatures (ﬀ ﬁ) -> plain letters
         t = SARA_AM.sub(lambda m: m.group(1) + ("ำ" if m.group(2) == "า" else "ຳ"), t)
@@ -352,7 +354,14 @@ def _spoken(pairs):
         if url:
             w.say = ""
             continue
-        if low in SAY:
+        if astro.CHARS.search(t):
+            if sky is None:
+                sky = astro.about_the_sky([p[0].text for p in pairs])
+            s = astro.spoken(t, lang, sky)
+            before = strip_punct(pairs[i - 1][0].text).lower() if i else ""
+            if before and s.strip(CLOSERS + ".,;:!?(").lower() == before:
+                s = ""                                   # 'Mars ♂': the name, said once
+        elif low in SAY:
             s = SAY[low]
         elif low in SAY_BEFORE_NUMBER and nxt[:1].isdigit():
             s = SAY_BEFORE_NUMBER[low]
@@ -402,8 +411,114 @@ def _ends_sentence(w, nxt, prev=None):
     return not f[:1].islower()
 
 
-def split_sentences(para, lang="en"):
-    words = _spoken(_join_hyphens(para.words, lang))
+# Letters a PDF's font left without their meaning: a ligature drawn as one glyph that the font
+# maps to nothing (MuPDF then gives the glyph's code: 'fi' read as '\u00eb', 'fl' as '\u00ec'), or to a
+# private-use code of its own ('Th' as U+E053). MEASURED in a 259-page book: 2,243 words such as
+# 'first', 'significant', 'The', 'Threshold' printed this way; the voices skipped the letters ('irst').
+LIGATURES = ("fi", "fl", "ff", "ffi", "ffl", "Th", "ft", "st", "ct", "f", "fj")
+# (not U+F000-F0FF: a symbol font's own signs, Symbol, Wingdings, an astrology font's planets; not
+# U+F8E5-F8FF, the pieces of tall brackets; not × and ÷)
+SUSPECT = re.compile("[\ue000-\uefff\uf100-\uf8e4\ufffd\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff]")
+SMALL_CAPS = re.compile("[\uf721-\uf7ff]")      # Adobe's small capitals: U+F761 is a small 'a'
+
+
+def _private(c):
+    return "\ue000" <= c <= "\uf8ff" or c == "\ufffd"
+
+
+def _fix_glyphs(raw, lang="en", learned=None):
+    """raw word tuples with each lost letter put back: Adobe's small capitals as their letters,
+    and any other unknown letter as the ligature that makes a known word of it. learned: {letter:
+    Counter of ligatures, counted once a word} kept for the whole book, so a word that could be
+    read two ways follows the rest ('\u00ecat' is 'flat' in a book whose '\u00ec' is 'fl' everywhere, not
+    'That'). An accented letter is put back only once 3 different words of the book agree on it
+    ('\u00ebrst', '\u00ebnancial', 'signi\u00ebcant' ...: 'fi'), and only where the word as printed is unknown
+    ('No\u00ebl' stays); a lone lucky match never does (a Chinese name 'ti\u00e9n' is not 'tiffin')."""
+    if not any(SUSPECT.search(r[5]) for r in raw):
+        return raw
+    known = _has_wordlist(lang) and lang not in ("zh", "ja", "ko")
+    # an accented letter is a lost one only in an English book, and only where it makes a common word:
+    # MEASURED over 150 books of other languages, real words changed ('çokları' -> 'stokları')
+    accents = lang == "en"
+    learned = {} if learned is None else learned
+    ok = lambda c: unicodedata.category(c)[0] in "LMN" or SUSPECT.match(c)
+    out = []
+    for r in raw:
+        t = SMALL_CAPS.sub(lambda m: chr(ord(m.group()) - 0xF700), r[5])
+        if known and SUSPECT.search(t):
+            i, j = 0, len(t)
+            while i < j and not ok(t[i]):
+                i += 1
+            while j > i and not ok(t[j - 1]):
+                j -= 1
+            core = t[i:j]
+            # (the end of a word hyphenated on the line before: 'signi-' + '\u00ebcantly')
+            head = out[-1][5][:-1] if out and out[-1][5].endswith("-") and not i else ""
+            head = head if head[-1:].isalpha() else ""
+            for c in dict.fromkeys(ch for ch in core if SUSPECT.match(ch)):
+                if not _private(c) and (not accents or _zipf(head + core, lang) >= 1.0):
+                    continue                        # a real accented word
+                cap = lambda lig: lig if (head + core).startswith(c) else lig.lower()
+                votes = learned.get(c)
+                usual = votes.most_common(1)[0] if votes else None
+                agreed = usual and usual[1] >= 3 and usual[1] >= 0.8 * sum(votes.values())
+                if agreed and (_private(c) or _zipf(head + core.replace(c, cap(usual[0])), lang) >= 1.0):
+                    core = core.replace(c, cap(usual[0]))   # this book's own reading of it
+                    continue
+                best, score = None, 1.0 if _private(c) else 3.0
+                for lig in LIGATURES:
+                    word = head + core.replace(c, cap(lig))
+                    z = _zipf(word, lang)
+                    if z > score and (_private(c) or (word.isalpha() and len(word) >= 4)):
+                        best, score = lig, z
+                if best:
+                    seen = learned.setdefault((c, "words"), set())
+                    if head + core not in seen:
+                        seen.add(head + core)
+                        learned.setdefault(c, Counter())[best] += 1
+                    if _private(c):
+                        core = core.replace(c, cap(best))
+            t = t[:i] + core + t[j:]
+        out.append(r[:5] + (t,) + r[6:] if t != r[5] else r)
+    return out
+
+
+# a letter that text recognition read as a bar, by language: Latvian 'ļ' (MEASURED: all 14 bars inside
+# words of a Latvian book were ļ: 'Kora|ļu', '|audis', 'gu|būvju'), which the translators misread
+BAR_LETTER = {"lv": "ļ"}
+
+
+def _fix_bars(raw, lang):
+    c = BAR_LETTER.get(lang)
+    if not c or not any("|" in r[5] for r in raw):
+        return raw
+    fix = lambda t: re.sub(r"(?<=[^\W\d_])\||\|(?=[^\W\d_])", c, t) if re.search(r"[^\W\d_]", t) else t
+    return [r[:5] + (fix(r[5]),) + r[6:] for r in raw]
+
+
+# Curly quotes a Word font shifted to the next codes along (MEASURED in a Word 2010 PDF: 78 quotes
+# as '―expert‖', 'Let‘s', '‗The Hebrew'): the voice took '‖' for no closing quote, so
+# 'die.‖' ran on into the next sentence
+SHIFTED_QUOTES = [(re.compile(r"^([(\[]?)\u2015(?=\w)"), "\\1\u201c"),           # opening double
+                  (re.compile(r"(?<=[\w.,;:!?)\]])\u2016"), "\u201d"),              # closing double
+                  (re.compile(r"^([(\[]?)\u2017(?=\w)"), "\\1\u2018"),           # opening single
+                  (re.compile(r"(?<=\w)\u2018(?=\w|$|[.,;:!?\u201d])"), "\u2019")]   # apostrophe / closing single
+
+
+def _fix_quotes(raw):
+    if not any(c in r[5] for r in raw for c in "\u2015\u2016\u2017\u2018"):
+        return raw
+    out = []
+    for r in raw:
+        t = r[5]
+        for pat, rep in SHIFTED_QUOTES:
+            t = pat.sub(rep, t)
+        out.append(r[:5] + (t,) + r[6:] if t != r[5] else r)
+    return out
+
+
+def split_sentences(para, lang="en", learned=None):
+    words = _spoken(_join_hyphens(_fix_glyphs(_fix_bars(_fix_quotes(para.words), lang), lang, learned), lang), lang)
     if para.kind == "heading":
         groups = [words]
     else:
@@ -461,11 +576,11 @@ def code_sentences(para, mode):
     return out
 
 
-def build_sentences(pages, layout, lang="en", code_mode="explain"):
+def build_sentences(pages, layout, lang="en", code_mode="explain", learned=None):
     out = []
     for para in build_paragraphs(pages, layout):
         if para.kind == "code":
             out.extend(code_sentences(para, code_mode))
             continue
-        out.extend(s for s in split_sentences(para, lang) if any(w.say for w in s.words))
+        out.extend(s for s in split_sentences(para, lang, learned) if any(w.say for w in s.words))
     return out

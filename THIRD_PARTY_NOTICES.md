@@ -8,7 +8,7 @@ them with the credit their licenses ask for.
 
 | Part | What it does | License | Source |
 |---|---|---|---|
-| NLLB-200 distilled 600M (converted to 8-bit CTranslate2) | the offline translator | **CC BY-NC 4.0 — non-commercial use only** | Meta AI, NLLB Team et al. (2022), https://huggingface.co/facebook/nllb-200-distilled-600M |
+| NLLB-200 distilled 1.3B (converted to 8-bit CTranslate2) | the offline translator | **CC BY-NC 4.0 — non-commercial use only** | Meta AI, NLLB Team et al. (2022), https://huggingface.co/facebook/nllb-200-distilled-1.3B |
 | Surya layout model (exported to ONNX, 8-bit) | finds the text, headings and pictures on a page | Datalab's modified AI Pubs Open RAIL-M: free for research, personal use and organizations under US$5M funding/revenue (listed as CC BY-NC-SA 4.0 on Hugging Face); passed on under the same terms | Datalab, https://github.com/datalab-to/surya |
 | PaddleOCR PP-OCRv5/v6 recognition and detection models (ONNX, via RapidOCR) | reads scanned pages | Apache-2.0 | PaddlePaddle, https://github.com/PaddlePaddle/PaddleOCR ; RapidAI, https://github.com/RapidAI/RapidOCR |
 | Tesseract `tessdata_fast` trained models (16 scripts + OSD) | reads Bengali, Hebrew, Georgian and other scanned scripts | Apache-2.0 | https://github.com/tesseract-ocr/tessdata_fast |

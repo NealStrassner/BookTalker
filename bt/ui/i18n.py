@@ -151,8 +151,8 @@ T = {
     pt="Diminuir zoom  (Ctrl −)", ru="Уменьшить  (Ctrl −)", zh="缩小  (Ctrl −)"),
 "Zoom in  (Ctrl +)": dict(es="Acercar  (Ctrl +)", fr="Zoom avant  (Ctrl +)", de="Vergrößern  (Strg +)", it="Ingrandisci  (Ctrl +)",
     pt="Aumentar zoom  (Ctrl +)", ru="Увеличить  (Ctrl +)", zh="放大  (Ctrl +)"),
-"Fit page width": dict(es="Ajustar al ancho", fr="Ajuster à la largeur", de="An Breite anpassen", it="Adatta alla larghezza",
-    pt="Ajustar à largura", ru="По ширине страницы", zh="适合页宽"),
+"Fit the whole page": dict(es="Ajustar la página entera", fr="Ajuster la page entière", de="Ganze Seite einpassen", it="Adatta la pagina intera",
+    pt="Ajustar a página inteira", ru="Страница целиком", zh="整页显示"),
 "Follow the voice — keep the spoken word in view": dict(
     es="Seguir la voz: mantener visible la palabra que se lee", fr="Suivre la voix — garder le mot lu à l’écran",
     de="Der Stimme folgen — das gesprochene Wort im Blick behalten", it="Segui la voce — mantieni visibile la parola letta",

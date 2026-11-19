@@ -14,18 +14,20 @@ import zipfile
 
 from .paths import package_family, resource
 
-LLAMA_TAG = "b11404"
+LLAMA_TAG = "b12521"
 AI_MODEL_FILE = "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
 AI_MODEL_URL = f"https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/main/{AI_MODEL_FILE}"
 LLAMA_URL = "https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-win-{kind}-x64.zip"
 VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/{lang}/{loc}/{name}/{quality}/{stem}.onnx"
 AI_SIZE_MB = 2600
-# the fast translator (NLLB-200 distilled 600M, 8-bit CTranslate2; CC BY-NC 4.0) is built in; this copy on
-# BookTalker's GitHub release is fetched only if it's missing (and serves anyone building from source)
+# the fast translator (NLLB-200 distilled 1.3B, 8-bit CTranslate2; CC BY-NC 4.0) is built in; this copy on
+# BookTalker's GitHub release is fetched only if it's missing (and serves anyone building from source).
+# (MEASURED on a Latvian book against Google's English of three chapters: chrF 62.3, the 600M 58.8; the
+# 600M turned 'one pair of trousers' into 'one outgoing bishop'. About twice the processor time.)
 REPO = "NealStrassner/BookTalker"
-TRANSLATOR_DIR = "nllb-600m-int8"
-TRANSLATOR_URL = f"https://github.com/{REPO}/releases/download/models-1/nllb-200-distilled-600M-int8.zip"
-TRANSLATOR_SIZE_MB = 600
+TRANSLATOR_DIR = "nllb-1.3b-int8"
+TRANSLATOR_URL = f"https://github.com/{REPO}/releases/download/models-2/nllb-200-distilled-1.3B-int8.zip"
+TRANSLATOR_SIZE_MB = 1390
 
 
 def packs_dir(*parts):
@@ -113,7 +115,7 @@ class Download(threading.Thread):
             for url, dest, unzip in self.items:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 req = urllib.request.Request(url, headers={"User-Agent": "BookTalker"})
-                # (a big folder zip goes to disk, not memory: the translator's is 600 MB)
+                # (a big folder zip goes to disk, not memory: the translator's is 1.4 GB)
                 buf = (open(dest + ".zip.part", "wb") if unzip == "dir" else
                        io.BytesIO() if unzip else open(dest + ".part", "wb"))
                 with urllib.request.urlopen(req, context=ctx, timeout=60) as r:

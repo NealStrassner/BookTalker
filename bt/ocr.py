@@ -135,6 +135,16 @@ class OCR:
             })
         return self._engines[kind]
 
+    def _det(self, kind="ch"):
+        """The engine's line finder (RapidOCR 3.10 loads its models on first use)."""
+        e = self._engine(kind)
+        return e._load_det_model() if hasattr(e, "_load_det_model") else e.text_det
+
+    def _rec(self, kind):
+        """The engine's line reader."""
+        e = self._engine(kind)
+        return e._load_rec_model() if hasattr(e, "_load_rec_model") else e.text_rec
+
     def read(self, img, kind="ch", lines=False):
         """img: HxWx3 uint8 array -> ([(x0, y0, x1, y1, text, line)], mean score). lines: Tesseract
         may read line by line where it finds no lines itself (only for a reader the user chose:
@@ -254,7 +264,7 @@ class OCR:
         if getattr(self, "_area_key", None) == key:
             return self._area
         with self._lock:
-            det = self._engine("ch").text_det(img)
+            det = self._det("ch")(img)
         area = None
         if det.boxes is not None and len(det.boxes):
             q = np.asarray(det.boxes, float).reshape(-1, 2)
@@ -272,7 +282,7 @@ class OCR:
         from PIL import Image
         t = self._tesseract()
         with self._lock:
-            det = self._engine("ch").text_det(img)
+            det = self._det("ch")(img)
         if t is None or det.boxes is None:
             return [], 0.0
         words, confs = [], []
@@ -337,14 +347,14 @@ class OCR:
         from rapidocr.utils.process_img import get_rotate_crop_image
         import copy
         with self._lock:
-            det = self._engine("ch").text_det(area)
+            det = self._det("ch")(area)
         if det.boxes is None or not len(det.boxes):
             return {}
         crops = [get_rotate_crop_image(area, copy.deepcopy(b)) for b in det.boxes]
         out = {}
         for kind in REC:
             with self._lock:
-                r = self._engine(kind).text_rec(TextRecInput(img=crops, return_word_box=False))
+                r = self._rec(kind)(TextRecInput(img=crops, return_word_box=False))
             pairs = [(t, s) for t, s in zip(r.txts or (), r.scores or ()) if s >= 0.7]   # as a real read keeps
             words = [(0, 0, 0, 0, tok, 0) for t, _ in pairs for tok in t.split()]
             mean = sum(s for _, s in pairs) / len(pairs) if pairs else 0.0
