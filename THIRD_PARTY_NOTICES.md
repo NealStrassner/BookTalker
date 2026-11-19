@@ -8,7 +8,7 @@ them with the credit their licenses ask for.
 
 | Part | What it does | License | Source |
 |---|---|---|---|
-| NLLB-200 distilled 1.3B (converted to 8-bit CTranslate2) | the offline translator | **CC BY-NC 4.0 — non-commercial use only** | Meta AI, NLLB Team et al. (2022), https://huggingface.co/facebook/nllb-200-distilled-1.3B |
+| NLLB-200 distilled 600M (converted to 8-bit CTranslate2) | the offline translator | **CC BY-NC 4.0 — non-commercial use only** | Meta AI, NLLB Team et al. (2022), https://huggingface.co/facebook/nllb-200-distilled-600M |
 | Surya layout model (exported to ONNX, 8-bit) | finds the text, headings and pictures on a page | Datalab's modified AI Pubs Open RAIL-M: free for research, personal use and organizations under US$5M funding/revenue (listed as CC BY-NC-SA 4.0 on Hugging Face); passed on under the same terms | Datalab, https://github.com/datalab-to/surya |
 | PaddleOCR PP-OCRv5/v6 recognition and detection models (ONNX, via RapidOCR) | reads scanned pages | Apache-2.0 | PaddlePaddle, https://github.com/PaddlePaddle/PaddleOCR ; RapidAI, https://github.com/RapidAI/RapidOCR |
 | Tesseract `tessdata_fast` trained models (16 scripts + OSD) | reads Bengali, Hebrew, Georgian and other scanned scripts | Apache-2.0 | https://github.com/tesseract-ocr/tessdata_fast |
@@ -16,7 +16,6 @@ them with the credit their licenses ask for.
 | wordfreq word lists | judges whether text reads as real words | CC BY-SA 4.0 (data from Google Books Ngrams, Leeds Internet Corpus, Wikipedia, OpenSubtitles and others; see the wordfreq README) | Robyn Speer, https://github.com/rspeer/wordfreq |
 | Piper voice **en_GB-alba-medium** | the built-in English voice | recordings CC BY 4.0 | recordings: University of Edinburgh, Alba corpus, https://datashare.ed.ac.uk/handle/10283/3270 ; voice model: the Piper project, https://huggingface.co/rhasspy/piper-voices |
 | espeak-ng data (inside piper-tts) | turns text into sounds for the voice | GPL-3.0-or-later | https://github.com/espeak-ng/espeak-ng |
-| Lithuanian stress dictionary (`bt/piperx/lithuanian`) | where the Lithuanian voice puts the stress | CC BY 4.0 (built from the LIEPA corpus annotation, Vilnius University, and the g2p-lt-lexicon by Arūnas Smaliukas); letter-name and vocative lists GPL-3.0 | https://github.com/OHF-voice/piper1-gpl ; https://huggingface.co/datasets/meldynamics/liepa-tts ; https://github.com/svogunas/g2p-lt-lexicon ; build: https://github.com/RobertasTa/reginute |
 
 **The translator is for non-commercial use.** BookTalker is given away free, which the NLLB license
 allows. The AGPL lets anyone reuse BookTalker's own code, even commercially, but whoever does that
@@ -31,7 +30,9 @@ must replace the NLLB model (and check the Surya model's terms) first.
 | g2pW model and its lookup tables — how the Chinese voices Chaowen and Xiao Ya pronounce each character (fetched with those voices) | Apache-2.0 | Yi-Chang Chen, https://github.com/GitYCC/g2pW ; model file from the Piper project, https://huggingface.co/datasets/rhasspy/piper-checkpoints ; tables from the g2pW package, https://pypi.org/project/g2pw/ |
 | BERT Chinese word list (`vocab.txt` of bert-base-chinese, fetched with the same voices) | Apache-2.0 | Google, https://huggingface.co/google-bert/bert-base-chinese |
 | TLTK, its pronunciation part (`nlp.py` and seven dictionary files) — how the Thai voice pronounces (fetched with that voice; its license file is kept beside it) | BSD-3-Clause | Wirote Aroonmanakun, Dept. of Linguistics, Chulalongkorn University, https://pypi.org/project/tltk/ |
+| Lithuanian stress dictionary — where the Lithuanian voice puts the stress (fetched with that voice) | CC BY 4.0 (built from the LIEPA corpus annotation, Vilnius University, and the g2p-lt-lexicon by Arūnas Smaliukas); letter-name and vocative lists GPL-3.0 | https://github.com/OHF-voice/piper1-gpl ; https://huggingface.co/datasets/meldynamics/liepa-tts ; https://github.com/svogunas/g2p-lt-lexicon ; build: https://github.com/RobertasTa/reginute |
 | Qwen3-4B-Instruct-2507 (GGUF) — the optional AI translator | Apache-2.0 | Alibaba Qwen team, https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507 |
+| EuroMoE-2.6B-A0.6B-Instruct-2512 (GGUF) — the AI translator on a computer without a graphics card | Apache-2.0 | the EuroLLM project (utter-project), https://huggingface.co/utter-project/EuroMoE-2.6B-A0.6B-Instruct-2512 ; GGUF: mradermacher, https://huggingface.co/mradermacher/EuroMoE-2.6B-A0.6B-Instruct-2512-GGUF |
 | llama.cpp (`llama-server`) — runs the AI translator | MIT | https://github.com/ggml-org/llama.cpp |
 
 ## Libraries with their own native code
@@ -100,8 +101,8 @@ Listed from the build itself (every package the installed program contains).
 | colorama | 0.4.6 | BSD-3-Clause | https://github.com/tartley/colorama |
 | colorlog | 6.12.0 | MIT | https://github.com/borntyping/python-colorlog |
 | cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | https://github.com/pyca/cryptography |
-| ctranslate2 | 4.8.4 | MIT | https://opennmt.net |
-| fast-langdetect | 1.0.1 | MIT |  |
+| ctranslate2 | 4.9.0 | MIT | https://opennmt.net |
+| fast-langdetect | 1.2.0 | MIT |  |
 | fasttext-predict | 0.9.2.4 | MIT License | https://github.com/searxng/fasttext-predict/ |
 | ftfy | 6.3.1 | Apache-2.0 | https://github.com/rspeer/python-ftfy |
 | idna | 3.20 | BSD-3-Clause | https://github.com/kjd/idna/blob/master/HISTORY.md |
@@ -110,44 +111,44 @@ Listed from the build itself (every package the installed program contains).
 | locate | 1.1.1 | MIT | https://github.com/AutoActuary/locate |
 | lxml | 6.1.3 | BSD-3-Clause | https://lxml.de/ |
 | mammoth | 1.13.0 | BSD-2-Clause | https://github.com/mwilliamson/python-mammoth |
-| ml_dtypes | 0.6.0 | Apache-2.0 | https://github.com/jax-ml/ml_dtypes |
+| ml_dtypes | 0.7.0 | Apache-2.0 | https://github.com/jax-ml/ml_dtypes |
 | msgpack | 1.2.4 | Apache-2.0 | https://github.com/msgpack/msgpack-python/ |
-| numpy | 2.5.4 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | https://github.com/numpy/numpy |
-| omegaconf | 2.3.1 | BSD-3-Clause | https://github.com/omry/omegaconf |
+| numpy | 2.5.5 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | https://github.com/numpy/numpy |
+| omegaconf | 2.4.0 | BSD-3-Clause | https://github.com/omry/omegaconf |
 | onnx | 1.23.2 | Apache-2.0 | https://github.com/onnx/onnx |
-| onnxruntime | 1.30.0 | MIT | https://onnxruntime.ai |
-| opencv-python-headless | 5.0.0.93 | Apache-2.0 | https://github.com/opencv/opencv-python |
+| onnxruntime | 1.32.0 | MIT | https://onnxruntime.ai |
+| opencv-python-headless | 5.1.0.95 | Apache-2.0 | https://github.com/opencv/opencv-python |
 | packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | https://github.com/pypa/packaging |
 | pillow | 13.0.0 | HPND (MIT-CMU) | https://github.com/python-pillow/Pillow/blob/main/CHANGES.rst |
 | piper-tts | 1.8.0 | GPL-3.0-or-later | http://github.com/OHF-voice/piper1-gpl |
-| platformdirs | 4.14.0 | MIT | https://github.com/tox-dev/platformdirs |
+| platformdirs | 4.14.7 | MIT | https://github.com/tox-dev/platformdirs |
 | protobuf | 7.36.2 | BSD-3-Clause | https://developers.google.com/protocol-buffers/ |
 | psutil | 7.2.2 | BSD-3-Clause | https://github.com/giampaolo/psutil |
 | pyclipper | 1.4.0 | MIT | https://github.com/fonttools/pyclipper |
 | pycparser | 3.12 | BSD-3-Clause | https://github.com/eliben/pycparser |
-| pymupdf | 1.28.2 | AGPL-3.0 (or Artifex commercial license) | https://github.com/pymupdf/pymupdf |
-| PySide6 | 6.11.2 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | https://pyside.org |
-| PySide6_Addons | 6.11.2 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | https://pyside.org |
-| PySide6_Essentials | 6.11.2 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | https://pyside.org |
+| pymupdf | 2.1 | AGPL-3.0 (or Artifex commercial license) | https://github.com/pymupdf/pymupdf |
+| PySide6 | 6.12.0 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | https://pyside.org |
+| PySide6_Addons | 6.12.0 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | https://pyside.org |
+| PySide6_Essentials | 6.12.0 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | https://pyside.org |
 | python-pptx | 1.0.2 | MIT | https://github.com/scanny/python-pptx/blob/master/HISTORY.rst |
 | PyYAML | 6.0.3 | MIT | https://pyyaml.org/ |
-| rapidocr | 3.9.2 | Apache-2.0 | https://rapidai.github.io/RapidOCRDocs |
-| regex | 2026.9.29 | Apache-2.0 AND CNRI-Python | https://github.com/mrabarnett/mrab-regex |
+| rapidocr | 3.10.0 | Apache-2.0 | https://rapidai.github.io/RapidOCRDocs |
+| regex | 2026.11.19 | Apache-2.0 AND CNRI-Python | https://github.com/mrabarnett/mrab-regex |
 | requests | 2.34.2 | Apache-2.0 | https://github.com/psf/requests |
 | robust-downloader | 0.0.2 | Apache-2.0 | https://github.com/fedebotu/robust-downloader |
-| sentence-stream | 1.3.0 | Apache-2.0 | http://github.com/OHF-Voice/sentence-stream |
-| sentencepiece | 0.2.2 | Apache-2.0 | https://github.com/google/sentencepiece |
-| setuptools | 78.1.0 | MIT | https://github.com/pypa/setuptools |
-| shapely | 2.1.2 | BSD-3-Clause | https://github.com/shapely/shapely |
-| shiboken6 | 6.11.2 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | https://pyside.org |
+| sentence-stream | 1.4.0 | Apache-2.0 | http://github.com/OHF-Voice/sentence-stream |
+| sentencepiece | 0.2.3 | Apache-2.0 | https://github.com/google/sentencepiece |
+| setuptools | 84.2.1 | MIT | https://github.com/pypa/setuptools |
+| shapely | 2.2.0 | BSD-3-Clause | https://github.com/shapely/shapely |
+| shiboken6 | 6.12.0 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | https://pyside.org |
 | sounddevice | 0.5.6 | MIT | https://github.com/spatialaudio/python-sounddevice/ |
-| soupsieve | 2.10 | MIT | https://github.com/facelessuser/soupsieve |
-| tesserocr | 2.10.0 | MIT | https://github.com/sirfz/tesserocr |
-| threadpoolctl | 3.7.0 | BSD-3-Clause | https://github.com/joblib/threadpoolctl |
+| soupsieve | 4.1.2 | MIT | https://github.com/facelessuser/soupsieve |
+| tesserocr | 2.13.0 | MIT | https://github.com/sirfz/tesserocr |
+| threadpoolctl | 3.8.0 | BSD-3-Clause | https://github.com/joblib/threadpoolctl |
 | tqdm | 4.70.1 | MPL-2.0 AND MIT | https://tqdm.github.io |
 | typing_extensions | 4.16.0 | PSF-2.0 | https://github.com/python/typing_extensions/issues |
-| unicode-rbnf | 2.4.1 | MIT | https://github.com/rhasspy/unicode-rbnf |
+| unicode-rbnf | 2.5.0 | MIT | https://github.com/rhasspy/unicode-rbnf |
 | urllib3 | 2.8.0 | MIT | https://github.com/urllib3/urllib3/blob/main/CHANGES.rst |
 | wcwidth | 0.9.4 | MIT | https://github.com/jquast/wcwidth |
 | wordfreq | 3.1.1 | Apache-2.0 (code); data CC BY-SA 4.0, see below | https://github.com/rspeer/wordfreq/ |
-| xlsxwriter | 3.2.9 | BSD-2-Clause | https://github.com/jmcnamara/XlsxWriter |
+| xlsxwriter | 3.3.1 | BSD-2-Clause | https://github.com/jmcnamara/XlsxWriter |

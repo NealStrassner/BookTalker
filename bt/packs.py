@@ -2,7 +2,8 @@
 official public sources only when the user asks for them, keeping the app itself small.
 
     voices          huggingface.co/rhasspy/piper-voices          ~60 MB each
-    AI translator   huggingface.co/bartowski (Qwen3-4B, Apache-2.0)  2.5 GB
+    AI translator   huggingface.co/bartowski (Qwen3-4B, Apache-2.0)  2.5 GB   (a computer with a graphics card)
+                    huggingface.co/mradermacher (EuroMoE, Apache-2.0) 1.6 GB  (a computer without one)
                     github.com/ggml-org/llama.cpp (engine)         ~50 MB
 """
 import io
@@ -20,14 +21,55 @@ AI_MODEL_URL = f"https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GG
 LLAMA_URL = "https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-win-{kind}-x64.zip"
 VOICE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/{lang}/{loc}/{name}/{quality}/{stem}.onnx"
 AI_SIZE_MB = 2600
-# the fast translator (NLLB-200 distilled 1.3B, 8-bit CTranslate2; CC BY-NC 4.0) is built in; this copy on
-# BookTalker's GitHub release is fetched only if it's missing (and serves anyone building from source).
-# (MEASURED on a Latvian book against Google's English of three chapters: chrF 62.3, the 600M 58.8; the
-# 600M turned 'one pair of trousers' into 'one outgoing bishop'. About twice the processor time.)
+# A computer without a graphics card runs EuroMoE instead (the EuroLLM project, utter-project; Apache-2.0):
+# 2.6B parameters of which 0.6B work on each word, so it keeps up on the processor. MEASURED on 4 processor
+# threads, a Latvian book against Google's English of three chapters: chrF 64.4 at 1.4 s a sentence (the
+# fast translator: 58.8 at 1.3 s; Qwen3-4B on the processor: 12 tokens/s, too slow to read along).
+CPU_AI_FILE = "EuroMoE-2.6B-A0.6B-Instruct-2512.Q4_K_M.gguf"
+CPU_AI_URL = ("https://huggingface.co/mradermacher/EuroMoE-2.6B-A0.6B-Instruct-2512-GGUF/resolve/"
+              f"11be4a9e68eb5aba18e4c3b341cbef2d018b2da0/{CPU_AI_FILE}")
+CPU_AI_SIZE_MB = 1650
+# The languages each AI translator reads better than the fast translator (by 1 chrF or more), MEASURED
+# on FLORES-101: 60 professionally translated sentences in each of 34 languages, into English, chrF
+# against the human English. A book in any other language is read by the fast translator, which did as
+# well or better there (Arabic, Hindi, Turkish, Polish, Dutch, Greek, Irish, Maltese ...).
+GPU_AI_LANGS = {"en", "ja", "zh", "ko", "es", "fr", "de", "it", "pt", "ru", "lv", "cs", "hu"}     # Qwen3-4B
+CPU_AI_LANGS = {"en", "zh", "fr", "pt", "lv", "sl", "hu", "gl"}                                 # EuroMoE
+_card = None
+
+
+def graphics_card():
+    """A graphics card with memory of its own enough for Qwen3-4B (3.5 GB or more; built-in laptop
+    graphics share the computer's memory and report far less)."""
+    global _card
+    if _card is None:
+        _card = False
+        try:
+            import subprocess
+            out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                                  "(Get-CimInstance Win32_VideoController).AdapterRAM"],
+                                 capture_output=True, text=True, timeout=20, creationflags=0x08000000).stdout
+            _card = any(int(v) >= 3.5e9 for v in out.split() if v.strip().isdigit())
+        except Exception:
+            pass
+    return _card
+
+
+def ai_knows(lang, target, gpu=None):
+    """The AI translator reads this book better than the fast translator would: both the book's
+    language and the one it is read in are among its measured languages (GPU_AI_LANGS, CPU_AI_LANGS)."""
+    langs = GPU_AI_LANGS if (graphics_card() if gpu is None else gpu) else CPU_AI_LANGS
+    return (lang or "")[:2] in langs and (target or "")[:2] in langs
+
+
+def ai_size_mb():
+    return AI_SIZE_MB if graphics_card() else CPU_AI_SIZE_MB
+# the fast translator (NLLB-200 distilled 600M, 8-bit CTranslate2; CC BY-NC 4.0) is built in; this copy on
+# BookTalker's GitHub release is fetched only if it's missing (and serves anyone building from source)
 REPO = "NealStrassner/BookTalker"
-TRANSLATOR_DIR = "nllb-1.3b-int8"
-TRANSLATOR_URL = f"https://github.com/{REPO}/releases/download/models-2/nllb-200-distilled-1.3B-int8.zip"
-TRANSLATOR_SIZE_MB = 1390
+TRANSLATOR_DIR = "nllb-600m-int8"
+TRANSLATOR_URL = f"https://github.com/{REPO}/releases/download/models-1/nllb-200-distilled-600M-int8.zip"
+TRANSLATOR_SIZE_MB = 600
 
 
 def packs_dir(*parts):
@@ -49,7 +91,8 @@ def find(*parts):
 
 
 def ai_installed():
-    return bool(find("models", "qwen", AI_MODEL_FILE) and find("engines", "llama", "vulkan", "llama-server.exe"))
+    return bool((find("models", "qwen", AI_MODEL_FILE) and find("engines", "llama", "vulkan", "llama-server.exe"))
+                or (find("models", "euromoe", CPU_AI_FILE) and find("engines", "llama", "cpu", "llama-server.exe")))
 
 
 def translator_dir():
@@ -60,6 +103,26 @@ def translator_dir():
 
 def translator_items():
     return [] if translator_dir() else [(TRANSLATOR_URL, packs_dir("models", TRANSLATOR_DIR), "dir")]
+
+
+# the Lithuanian voice's stress dictionary (3 MB, piper1-gpl's own files: dictionary CC BY 4.0, the rest
+# GPL-3.0), fetched with that voice from the repository at the version BookTalker was tested with
+LITHUANIAN_URL = ("https://raw.githubusercontent.com/OHF-voice/piper1-gpl/9b64bfcc0cb8b4243fa3e963915589c24762b872/"
+                  "src/piper/lithuanian/{name}")
+LITHUANIAN_FILES = ("lt_kirciai.tsv", "lt_kreipiniai.tsv", "lt_raides.tsv", "LICENSE", "SOURCE")
+
+
+def lithuanian_dir():
+    """The Lithuanian stress dictionary's folder (downloaded, or in a development copy), or None."""
+    for d in (packs_dir("lithuanian"), resource("bt", "piperx", "lithuanian")):
+        if all(os.path.exists(os.path.join(d, f)) for f in LITHUANIAN_FILES[:3]):
+            return d
+    return None
+
+
+def lithuanian_items():
+    return [] if lithuanian_dir() else [(LITHUANIAN_URL.format(name=f), packs_dir("lithuanian", f), False)
+                                        for f in LITHUANIAN_FILES]
 
 
 PINYIN_VOICES = {"zh_CN-chaowen-medium", "zh_CN-xiao_ya-medium"}
@@ -115,7 +178,7 @@ class Download(threading.Thread):
             for url, dest, unzip in self.items:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 req = urllib.request.Request(url, headers={"User-Agent": "BookTalker"})
-                # (a big folder zip goes to disk, not memory: the translator's is 1.4 GB)
+                # (a big folder zip goes to disk, not memory: the translator's is 600 MB)
                 buf = (open(dest + ".zip.part", "wb") if unzip == "dir" else
                        io.BytesIO() if unzip else open(dest + ".part", "wb"))
                 with urllib.request.urlopen(req, context=ctx, timeout=60) as r:
@@ -184,11 +247,15 @@ class Download(threading.Thread):
 
 
 def ai_items():
-    items = [(AI_MODEL_URL, packs_dir("models", "qwen", AI_MODEL_FILE), False)]
-    for kind in ("vulkan",):                    # graphics card only (see llm.LlamaEngine._start)
-        items.append((LLAMA_URL.format(tag=LLAMA_TAG, kind=kind), packs_dir("engines", "llama", kind), True))
-    # the AI runs only on a graphics card: the fast translator reads while it starts, when the
-    # card is busy, and on computers without one - so it always comes along
+    """Qwen3-4B for a graphics card, or EuroMoE for the processor (only what this computer can run)."""
+    if graphics_card():
+        items = [(AI_MODEL_URL, packs_dir("models", "qwen", AI_MODEL_FILE), False),
+                 (LLAMA_URL.format(tag=LLAMA_TAG, kind="vulkan"), packs_dir("engines", "llama", "vulkan"), True)]
+    else:
+        items = [(CPU_AI_URL, packs_dir("models", "euromoe", CPU_AI_FILE), False),
+                 (LLAMA_URL.format(tag=LLAMA_TAG, kind="cpu"), packs_dir("engines", "llama", "cpu"), True)]
+    # the fast translator reads while the AI starts, for languages EuroMoE doesn't know, and if the
+    # AI can't run after all - so it always comes along
     return items + translator_items()
 
 
@@ -196,7 +263,7 @@ def remove_ai():
     """Delete the best translator's model and engine (the fast translator stays). OSError while
     its engine is still running."""
     import shutil
-    for p in (packs_dir("models", "qwen"), packs_dir("engines", "llama")):
+    for p in (packs_dir("models", "qwen"), packs_dir("models", "euromoe"), packs_dir("engines", "llama")):
         if os.path.isdir(p):
             shutil.rmtree(p)
 
@@ -219,4 +286,6 @@ def voice_items(stem):
                   (G2PW_TABLES_URL, packs_dir("g2pW"), "tables")]
     if stem in THAI_VOICES and not all(os.path.exists(packs_dir("tltk", "tltk", f)) for f in TLTK_FILES):
         items.append((TLTK_URL, packs_dir("tltk", "tltk"), "tltk"))     # 20 MB
+    if stem.startswith("lt_"):
+        items += lithuanian_items()
     return items

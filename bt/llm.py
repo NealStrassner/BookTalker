@@ -28,10 +28,13 @@ def source_words(sentence):
 
 
 MODEL = ("models", "qwen", "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
+CPU_MODEL = ("models", "euromoe", "EuroMoE-2.6B-A0.6B-Instruct-2512.Q4_K_M.gguf")      # (packs.CPU_AI_FILE)
 NO_WINDOW = 0x08000000
 LOOKAHEAD = 12          # sentences translated ahead of the one being read
 CONTEXT = 3             # previous sentence pairs shown to the model
 MIN_TOKENS_PER_S = 14   # slower than this, the AI can't keep ahead of the voice: the fast translator reads
+MIN_CPU_TOKENS_PER_S = 6   # EuroMoE on the processor, measured as reading starts (the voice shares the
+                           # cores: 43 tokens/s alone on 2 threads, 10 beside Kokoro)
 
 
 def _kill_with_parent(proc):
@@ -87,18 +90,21 @@ class LlamaEngine:
 
     def _launch(self, kind):
         from .packs import find
+        self.kind = kind
         exe = find("engines", "llama", kind, "llama-server.exe")
-        model = find(*MODEL)
+        model = find(*(MODEL if kind == "vulkan" else CPU_MODEL))
         if not exe or not model:
             return False
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
             self.port = s.getsockname()[1]
         threads = max(2, (os.cpu_count() or 4) // 2)
-        # 2048 tokens of context is plenty (one sentence + 3 earlier pairs); flash attention and
-        # an 8-bit KV cache keep its memory small. Measured: CPU ready in ~3.5 s, ~11 tok/s.
+        # 2048 tokens of context is plenty (one sentence + 3 earlier pairs); flash attention and,
+        # on the graphics card, an 8-bit KV cache keep its memory small (EuroMoE on the processor
+        # stops with a fatal error on an 8-bit KV cache, MEASURED with llama.cpp b12521)
+        kv = ["-ctk", "q8_0", "-ctv", "q8_0"] if kind == "vulkan" else []
         args = [exe, "-m", model, "--host", "127.0.0.1", "--port", str(self.port),
-                "-c", "2048", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "-t", str(threads),
+                "-c", "2048", "-fa", "on", *kv, "-t", str(threads),
                 "--no-webui", "-ngl", "99" if kind == "vulkan" else "0",
                 # read the model in rather than memory-map it: MEASURED RAM in use 3047 -> 671 MB
                 # with the model on the graphics card (same speed, same answers)
@@ -125,10 +131,10 @@ class LlamaEngine:
         return False
 
     def _start(self):
-        # Whole model on the graphics card only. On the processor it was measured too slow to
-        # read along: never ahead of the voice, 2-5 s per sentence, 28 s of silence in 90 s, and it
-        # slowed the fast translator to 8 s a sentence too. So without a free card -> fast mode.
-        for kind, status in (("vulkan", "gpu"),):
+        # Qwen3-4B whole on a graphics card; on the processor it was measured too slow to read along
+        # (2-5 s a sentence, 28 s of silence in 90 s). Without a card, EuroMoE on the processor
+        # (packs.CPU_AI_FILE): 0.6B of its parameters work on each word, 1.4 s a sentence on 4 threads.
+        for kind, status in (("vulkan", "gpu"), ("cpu", "cpu")):
             if self._launch(kind):
                 self.status = status
                 self.ready.set()
@@ -151,7 +157,8 @@ class LlamaEngine:
         r = json.load(urllib.request.urlopen(req, timeout=60))
         speed = (r.get("timings") or {}).get("predicted_per_second") or 0
         self.speed = speed
-        return bool(r["choices"][0]["message"]["content"].strip()) and speed >= MIN_TOKENS_PER_S
+        least = MIN_TOKENS_PER_S if getattr(self, "kind", "vulkan") == "vulkan" else MIN_CPU_TOKENS_PER_S
+        return bool(r["choices"][0]["message"]["content"].strip()) and speed >= least
 
     def chat(self, messages, max_tokens=300, timeout=90):
         body = json.dumps({"messages": messages, "temperature": 0.0, "top_k": 1,
@@ -183,6 +190,7 @@ class SmartTranslator:
         self.nllb = nllb
         self.engine = LlamaEngine()
         self.best = True                    # False = always use the fast translator
+        self.lang = None                    # the book's language (packs.ai_knows)
         self.done = {}                      # sentence key -> English (AI)
         self.order = []                     # keys in the order the AI translated them
         self.target = "en"                  # language to translate into
@@ -205,8 +213,18 @@ class SmartTranslator:
                 self._job = None
                 self._cv.notify_all()
 
+    def ai_reads(self, lang=None):
+        """The AI translates this book: the engine runs, and for this book's languages it measured
+        better than the fast translator (packs.ai_knows; else the fast translator reads)."""
+        if not self.best or self.engine.status not in ("starting", "gpu", "cpu"):
+            return False
+        from .packs import ai_knows
+        gpu = None if self.engine.status == "starting" else self.engine.status == "gpu"
+        return ai_knows(lang or self.lang, self.target, gpu)
+
     def follow(self, book, key, lang, code):
         """Start (or restart) working ahead from this sentence."""
+        self.lang = lang
         with self._cv:
             self._gen += 1
             self._job = (self._gen, book, key, lang, code)
@@ -221,7 +239,7 @@ class SmartTranslator:
         with self._cv:
             self._last_asked = key
             self._cv.notify_all()
-            if self.best and self.engine.status in ("starting", "gpu", "cpu"):
+            if self.ai_reads():
                 end = time.time() + wait
                 while key not in self.done and time.time() < end:
                     self._cv.wait(timeout=max(0.05, end - time.time()))
@@ -260,6 +278,11 @@ class SmartTranslator:
                 if self.engine.status == "failed":
                     with self._cv:
                         self._job = None
+                continue
+            if not self.ai_reads(lang):
+                with self._cv:
+                    if gen == self._gen:
+                        self._job = None            # (a language EuroMoE doesn't know: the fast translator reads)
                 continue
             sent = book.get(key)
             history = []
@@ -305,11 +328,22 @@ class SmartTranslator:
 
     def _translate(self, src, lang, target, history):
         name, into = lang_name(lang), lang_name(target)
-        msgs = [{"role": "system", "content":
-                 f"You are an expert literary translator. Translate the user's {name} text into "
-                 f"natural, faithful {into} that keeps the author's tone and meaning. Keep names and "
-                 "terms consistent with your earlier translations. Do not add names, details or "
-                 f"explanations that are not in the text. Reply with the {into} translation only."}]
+        if self.engine.status == "cpu":
+            # EuroMoE, a small model: told to write each name as the book does. MEASURED on three
+            # chapters of a Latvian book against Google's English: chrF 65.1, 82% of the names kept;
+            # with the request below 58.0 and 68% ('Belgium' for Beļava, one wrong name repeated)
+            msgs = [{"role": "system", "content":
+                     f"You are an expert literary translator. Translate the user's {name} text into natural, "
+                     f"faithful {into} that keeps the author's tone and meaning. Write every name of a person, "
+                     f"place, farm or house as the {name} text writes it, only without its case ending; never "
+                     "replace a name with another one. Do not add names, details or explanations that are not "
+                     f"in the text. Reply with the {into} translation only."}]
+        else:
+            msgs = [{"role": "system", "content":
+                     f"You are an expert literary translator. Translate the user's {name} text into "
+                     f"natural, faithful {into} that keeps the author's tone and meaning. Keep names and "
+                     "terms consistent with your earlier translations. Do not add names, details or "
+                     f"explanations that are not in the text. Reply with the {into} translation only."}]
         for s, e in history:
             msgs += [{"role": "user", "content": s}, {"role": "assistant", "content": e}]
         msgs.append({"role": "user", "content": src})
@@ -358,7 +392,7 @@ def _translate_titles(smart, titles, lang, src_code, target, book=False, about="
     fast=False: the AI only (None when it can't give them all)."""
     into, name = lang_name(target), lang_name(lang)
     book_words = tuple(names)
-    ai = ai and smart.best and smart.engine.status in ("gpu", "cpu")
+    ai = ai and smart.best and smart.engine.status in ("gpu", "cpu") and smart.ai_reads(lang)
     if ai and titles and book:
         msgs = [{"role": "system", "content":
                  f"Line 1 is the title of a {name} book" + (", line 2 its author" if len(titles) > 1 else "") +
@@ -458,7 +492,7 @@ def titles_in_steps(smart, titles, lang, src_code, target, emit, book=False, abo
     else the fast translation at once, then the AI's as soon as it can ('Action one' -> 'Act
     One'). (MEASURED: an AI busy reading let a 36-title list run out of time, and the fast list,
     half of it left in French to keep its names, stayed for good.)"""
-    had_ai = smart.best and smart.engine.status in ("gpu", "cpu")
+    had_ai = smart.best and smart.engine.status in ("gpu", "cpu") and smart.ai_reads(lang)
     first = had_ai and not smart.reading_needs_ai()         # (the reading comes first)
     out = translate_titles(smart, titles, lang, src_code, target, book, about, names, fast=False) if first else None
     if out:
@@ -474,7 +508,7 @@ def titles_in_steps(smart, titles, lang, src_code, target, emit, book=False, abo
         if not smart.engine.ready.wait(180):
             return
     for _try in range(4):                       # the AI busy reading: asked again a little later
-        if not smart.best or smart.engine.status not in ("gpu", "cpu"):
+        if not smart.best or smart.engine.status not in ("gpu", "cpu") or not smart.ai_reads(lang):
             return
         smart.wait_for_reading()
         better = translate_titles(smart, titles, lang, src_code, target, book, about, names, fast=False)

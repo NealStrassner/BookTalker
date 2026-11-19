@@ -11,6 +11,7 @@ the catalog can speak:
 install() teaches the installed Piper these types; it changes nothing on disk.
 """
 import enum
+import os
 import sys
 import types
 
@@ -77,8 +78,14 @@ def install():
         if self.config.phoneme_type == "lithuanian":
             ph = getattr(self, "_bt_lithuanian", None)
             if ph is None:
+                from ..packs import lithuanian_dir
                 from .phonemize_lithuanian import LithuanianPhonemizer
-                ph = self._bt_lithuanian = LithuanianPhonemizer(espeak_data_dir=self.espeak_data_dir)
+                d = lithuanian_dir()            # (fetched with the voice: packs.voice_items)
+                if d is None:
+                    raise RuntimeError("the Lithuanian voice's stress dictionary is not downloaded")
+                ph = self._bt_lithuanian = LithuanianPhonemizer(
+                    dictionary_path=os.path.join(d, "lt_kirciai.tsv"), espeak_data_dir=self.espeak_data_dir,
+                    letters_path=os.path.join(d, "lt_raides.tsv"), vocatives_path=os.path.join(d, "lt_kreipiniai.tsv"))
             return ph.phonemize(text)
         if self.config.phoneme_type == "thai":
             load_tltk()

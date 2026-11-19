@@ -1,4 +1,4 @@
-"""Choose voices (and the best translator): tick to download, untick a downloaded one to remove
+"""Choose voices: tick to download, untick a downloaded one to remove
 it. Shown on first run and from 'More voices…' / 'More languages…'. Also the one-voice DownloadPrompt."""
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
@@ -12,16 +12,15 @@ from .i18n import tr
 from .widgets import IconButton, PillButton, soft_shadow
 
 
-AI = "ai"       # the AI translator's row key
-FAST = "fast"   # the fast translator's row key
+FAST = "fast"   # the translator's row key (only in a build made without it)
 
 
 def _mb(key):
-    return {AI: packs.AI_SIZE_MB, FAST: packs.TRANSLATOR_SIZE_MB}.get(key) or voices.size_mb(key)
+    return {FAST: packs.TRANSLATOR_SIZE_MB}.get(key) or voices.size_mb(key)
 
 
 def _items(key):
-    return packs.ai_items() if key == AI else packs.translator_items() if key == FAST else packs.voice_items(key)
+    return packs.translator_items() if key == FAST else packs.voice_items(key)
 
 
 class VoiceRow(QAbstractButton):
@@ -35,8 +34,8 @@ class VoiceRow(QAbstractButton):
         self.stem, self.have, self.locked = stem, have, locked
         mb = _mb(stem)
         self.label = text or f"{voices.display_name(stem)}  —  {voices.describe(stem)}" + (f"  ({mb} MB)" if mb else "")
-        self.note = tr("built in") if locked and stem not in (AI, FAST) else (tr("on this computer") if have else "")
-        lic = voices.license(stem) if stem not in (AI, FAST) else ""
+        self.note = tr("built in") if locked and stem != FAST else (tr("on this computer") if have else "")
+        lic = voices.license(stem) if stem != FAST else ""
         if lic:
             self.setToolTip(tr("Voice recordings: {lic}", lic=lic))
         elif stem == FAST:
@@ -181,25 +180,19 @@ class VoicePicker(QDialog):
         col = QVBoxLayout(inner)
         col.setContentsMargins(0, 0, 8, 0)
         col.setSpacing(0)
-        # translation first: two optional downloads (nothing is imposed on the reader's disk)
-        head = QLabel(tr("Translation"))
-        head.setFont(T.font(12, QFont.DemiBold, T.DISPLAY, 0.6))
-        head.setStyleSheet(f"color: {T.GOLD}; padding: 4px 0 4px 10px;")
-        col.addWidget(head)
-        fast_have = packs.translator_dir() is not None
-        ai_have = packs.ai_installed()
-        ai_row = VoiceRow(AI, ai_have, False, ai_have,      # (unticked: removed, like a downloaded voice)
-                          tr("Best translator — needs a graphics card") + f"  ({packs.AI_SIZE_MB} MB)")
-        tr_rows = [ai_row]
-        if not fast_have:       # (built in: only offered if it's missing, e.g. a build made without it)
-            tr_rows.insert(0, VoiceRow(FAST, False, False, False,
-                                       tr("Fast translator — hear books in another language") + f"  ({packs.TRANSLATOR_SIZE_MB} MB)"))
-            ai_row.setToolTip(tr("Includes the fast translator, which reads while the best translator starts and on computers without a graphics card."))
-        for r in tr_rows:
+        # (the translator comes by itself the first time a book is translated: Main._apply_mode; the
+        # small built-in one is offered here only when a build was made without it)
+        if packs.translator_dir() is None:
+            head = QLabel(tr("Translation"))
+            head.setFont(T.font(12, QFont.DemiBold, T.DISPLAY, 0.6))
+            head.setStyleSheet(f"color: {T.GOLD}; padding: 4px 0 4px 10px;")
+            col.addWidget(head)
+            r = VoiceRow(FAST, False, False, False,
+                         tr("Fast translator — hear books in another language") + f"  ({packs.TRANSLATOR_SIZE_MB} MB)")
             r.changed.connect(self._update_summary)
             col.addWidget(r)
             self.rows.append(r)
-        self.sections.append((head, tr_rows))
+            self.sections.append((head, [r]))
         for code in first + rest:
             own, local = i18n.AUTONYM.get(code, code.upper()), i18n.lang_label(code)
             head = QLabel(own if own == local else f"{own}  ·  {local}")
@@ -255,8 +248,6 @@ class VoicePicker(QDialog):
         parts = []
         if add:
             mb = sum(_mb(s) or 0 for s in add)
-            if AI in add and packs.translator_dir() is None and FAST not in add:
-                mb += packs.TRANSLATOR_SIZE_MB             # (the AI brings the fast translator along)
             parts.append(tr("{n} to download · {mb} MB", n=len(add), mb=mb))
         if drop:
             parts.append(tr("{n} to remove", n=len(drop)))
@@ -278,9 +269,6 @@ class VoicePicker(QDialog):
         add, drop = self._plan()
         kokoro_coming = any(voices.is_kokoro(s) for s in add)
         for stem in drop:
-            if stem == AI:                      # (the window stops its engine, then deletes it: Main._remove_ai)
-                self.removed.append(stem)
-                continue
             try:
                 voices.remove(stem, keep_model=kokoro_coming)
                 self.removed.append(stem)
@@ -289,7 +277,7 @@ class VoicePicker(QDialog):
         if not add:
             self.accept()
             return
-        items = list(dict.fromkeys(it for s in add for it in _items(s)))     # (AI and fast share the translator)
+        items = list(dict.fromkeys(it for s in add for it in _items(s)))
         self._adding = add
         for r in self.rows:
             r.setEnabled(False)

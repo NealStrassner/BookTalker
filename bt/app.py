@@ -340,7 +340,6 @@ class Main(QMainWindow):
         self._saved_mode = {}
         self._mode_lang = None
         self._ready_at = None
-        self.models.translator.best = self.settings.get("translate_best", True)
         self.target = self.settings.get("target_lang", "en")      # language to translate into
         self.models.translator.set_target(self.target)
         # if a recent book was being translated, warm the AI up while the welcome screen shows
@@ -348,9 +347,11 @@ class Main(QMainWindow):
         if any(self.settings.get(r.get("id"), {}).get("translate") for r in recent):
             QTimer.singleShot(3000, self.models.translator.warm_up)
         self.page = 0
-        self.zoom = None            # None = the whole page fitted
+        self.zoom = None            # None = fitted (self.fit), else the reader's own zoom
+        self.fit = "page"           # fitted: "page" = the whole page on screen, "width" = the page's width
         self.spread = bool(self.settings.get("spread"))     # two pages side by side, like a book
         self.follow = True
+        self.follow_wanted = True   # the reader's own choice (Play resumes following only if it's on)
         self.shown = None
         self.last_word = None
         self.resume_key = None
@@ -522,14 +523,14 @@ class Main(QMainWindow):
         self.zoom_lbl.setAlignment(Qt.AlignCenter)
         b_in = self._tip(IconButton("zoom_in", ""), "Zoom in  (Ctrl +)")
         b_in.clicked.connect(lambda: self._zoom(1.15))
-        b_fit = self._tip(IconButton("fit", ""), "Fit the whole page")
+        self.b_fit = b_fit = self._tip(IconButton("fit", ""), "Actual size (100%)")
         b_fit.clicked.connect(self._fit)
         self.b_spread = self._tip(IconButton("book", "", checkable=True), "Two pages side by side, like an open book")
         self.b_spread.setChecked(self.spread)
         self.b_spread.clicked.connect(lambda on: self._set_spread(on))
         self.b_follow = self._tip(IconButton("follow", "", checkable=True), "Follow the voice — keep the spoken word in view")
         self.b_follow.setChecked(True)
-        self.b_follow.clicked.connect(lambda on: self._set_follow(on))
+        self.b_follow.clicked.connect(lambda on: self._set_follow(on, chosen=True))
         self.bm_btn = self._tip(IconButton("bookmark", ""), "Bookmarks  (Ctrl B adds one)")
         self.bm_menu = QMenu(self.bm_btn)
         self.bm_menu.aboutToShow.connect(self._build_bookmark_menu)
@@ -768,18 +769,37 @@ class Main(QMainWindow):
         dark_title_bar(self)
 
     # ---- view ----------------------------------------------------------------------
-    def _set_follow(self, on=True):
+    def _set_follow(self, on=True, chosen=False):
+        """chosen: the reader pressed the button (turning to a page yourself only pauses following)."""
         self.follow = on
+        if chosen:
+            self.follow_wanted = on
         self.b_follow.setChecked(on)
 
     def _fit(self):
-        self.zoom = None
+        """One button, three sizes in turn: the reader's own size or 100% -> the page's width -> the
+        whole page on screen -> 100%."""
+        if self.zoom is not None:
+            self.zoom, self.fit = None, "width"
+        elif self.fit == "width":
+            self.fit = "page"
+        else:
+            self.zoom = 1.0
+        self._fit_tip()
         self._render(force=True)
+
+    def _fit_tip(self):
+        """The fit button's tip says what the next press does."""
+        key = "Fit page width" if self.zoom is not None else (
+            "Fit the whole page" if self.fit == "width" else "Actual size (100%)")
+        self._tips = [(w, k) for w, k in self._tips if w is not self.b_fit]
+        self._tip(self.b_fit, key)
 
     def _zoom(self, f):
         if not self.book:
             return
         self.zoom = min(max(self._effective_zoom() * f, 0.3), 6.0)
+        self._fit_tip()
         self._render(force=True)
 
     def _spread_pages(self, page=None):
@@ -814,9 +834,12 @@ class Main(QMainWindow):
         across = 2 if self.spread and self.book.page_count > 1 else 1   # (a cover alone keeps the spread's size)
         w = self.stage.scroll.width() - 2 * PageCanvas.MARGIN - 24 - PageCanvas.GUTTER * (across - 1)
         widths = sum(self.book.doc[p].rect.width for p in pages) * (across / len(pages))
+        by_width = min(w, 940 * across) / widths
+        if self.fit == "width":
+            return max(0.3, by_width)
         h = self.stage.scroll.height() - PageCanvas.MARGIN - self.stage.bar_room()
         tallest = max(self.book.doc[p].rect.height for p in pages)
-        return max(0.3, min(min(w, 940 * across) / widths, h / tallest))
+        return max(0.3, min(by_width, h / tallest))
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -1160,37 +1183,9 @@ class Main(QMainWindow):
         if d.failed_remove:
             self.stage.toast.show_message(tr("Couldn't remove {names} while in use — restart BookTalker and try again",
                                              names=", ".join(voices.display_name(s) for s in d.failed_remove)), ms=6000)
-        if "ai" in d.removed:                            # the best translator unticked: stopped, then deleted
-            self._remove_ai()
-        if "ai" in d.added:                              # the AI translator was just installed
-            self.models.translator.best = True
-            self.settings["translate_best"] = True
-            save_settings(self.settings)
-            self._follow_translation()
         if self.book and self.voice in d.removed:     # the voice reading now was removed
             self._choose_mode()
             self._apply_mode()
-
-    def _remove_ai(self):
-        """Delete the best translator; reading goes on with the fast one. Its engine is stopped first:
-        Windows won't delete a program that is running."""
-        smart = self.models.translator
-        smart.best = False
-        self.settings["translate_best"] = False
-        save_settings(self.settings)
-        smart.engine.stop()
-        smart.engine.status = "idle"
-        smart.engine.ready.clear()
-        for _try in range(20):                           # (its files are let go a moment after it stops)
-            try:
-                packs.remove_ai()
-                break
-            except OSError:
-                time.sleep(0.25)
-        else:
-            self.stage.toast.show_message(tr("Couldn't remove {names} while in use — restart BookTalker and try again",
-                                             names=tr("the best translator")), ms=6000)
-        self._follow_translation()
 
     def eventFilter(self, obj, event):
         """Scrolling the page while it reads: the voice carries on; only the automatic
@@ -1333,6 +1328,8 @@ class Main(QMainWindow):
         self.resume_key = tuple(saved["key"]) if saved.get("key") else None
         self.page = self.resume_key[0] if self.resume_key else 0
         self.zoom = saved.get("zoom")
+        self.fit = saved.get("fit", "page")
+        self._fit_tip()
         self._saved_mode = saved
         if saved.get("lang"):
             self.book.set_language(saved["lang"])
@@ -1508,22 +1505,6 @@ class Main(QMainWindow):
                 a.setCheckable(True)
                 a.setChecked(self.book.code_mode == mode)
                 a.triggered.connect(lambda _c=False, md=mode: self._set_code_mode(md))
-        smart = self.models.translator
-        if self.translate and smart.engine.available():      # a choice only once the AI is installed
-            m.addSeparator()
-            head = m.addAction(tr("TRANSLATION"))
-            head.setEnabled(False)
-            where = {"gpu": tr("on the graphics card"), "cpu": tr("on the processor"),
-                     "failed": tr("needs a free graphics card")}.get(smart.engine.status, "")
-            a = m.addAction(tr("Best translator") + (f"  ({where})" if where else ""))
-            a.setCheckable(True)
-            a.setChecked(smart.best)
-            a.setEnabled(smart.engine.status != "failed")
-            a.triggered.connect(lambda: self._set_quality(True))
-            b = m.addAction(tr("Fast translator"))
-            b.setCheckable(True)
-            b.setChecked(not smart.best)
-            b.triggered.connect(lambda: self._set_quality(False))
 
     # ---- sleep timer --------------------------------------------------------------------
     def _build_sleep_menu(self):
@@ -1915,24 +1896,6 @@ class Main(QMainWindow):
             if self.player:
                 self.player.set_mode(self.voice, self.translate, self.book.nllb, self.book.lang)
 
-    @opens_window
-    def _set_quality(self, best):
-        if best and not packs.ai_installed():
-            gb = packs.AI_SIZE_MB / 1000
-            ok = QMessageBox.question(
-                self, tr("Download the best translator?"),
-                tr("Best-quality translation uses Qwen3-4B (by Alibaba, free Apache license) running on this computer. "
-                   "It is a one-time download of about {size} GB from Hugging Face, plus the llama.cpp engine from GitHub."
-                   "\n\nDownload it now?", size=f"{gb:.1f}"))
-            if ok != QMessageBox.Yes:
-                return
-            self._download(tr("the best translator"), packs.ai_items(), lambda: self._set_quality(True))
-            return
-        self.models.translator.best = best
-        self.settings["translate_best"] = best
-        save_settings(self.settings)
-        self._apply_mode()
-
     def _set_target_value(self, code):
         self.target = code
         self.settings["target_lang"] = code
@@ -1989,11 +1952,11 @@ class Main(QMainWindow):
         self._apply_mode()                      # (loads it now: the loading card waits for this voice)
 
     # ---- downloads (extra voices, AI translator) --------------------------------------------
-    def _download(self, label, items, then):
+    def _download(self, label, items, then, on_fail=None):
         if getattr(self, "_dl", None) is not None:
             self.stage.toast.show_message(tr("Another download is still running"))
             return
-        self._dl_label, self._dl_then = label, then
+        self._dl_label, self._dl_then, self._dl_fail = label, then, on_fail
         self._dl = packs.Download(items, lambda d, t: self.sig.dl_progress.emit(float(d), float(t)),
                                   lambda err: self.sig.dl_done.emit(err or ""))
         self.stage.toast.show_message(tr("Downloading {what}…", what=label), sticky=True)
@@ -2009,6 +1972,8 @@ class Main(QMainWindow):
         self._dl = None
         if err:
             self.stage.toast.show_message(tr("Download failed: {err}", err=err), ms=6000)
+            if self._dl_fail:
+                self._dl_fail()
             return
         self.stage.toast.show_message(tr("Ready: {what}", what=self._dl_label), ms=2500)
         self._dl_then()
@@ -2033,6 +1998,14 @@ class Main(QMainWindow):
         threading.Thread(target=work, daemon=True).start()
 
     def _apply_mode(self):
+        if (self.translate and not packs.ai_installed() and packs.ai_knows(self.book.lang, self.target)
+                and getattr(self, "_dl", None) is None and not getattr(self, "_ai_tried", False)):
+            # the translator, the first time a book in a language it knows is translated: fetched
+            # before the reading starts (the progress shows), so the first translation heard is a good
+            # one; offline, the reading goes on with the small built-in one
+            self._ai_tried = True
+            self._download(tr("the translator"), packs.ai_items(), self._apply_mode, on_fail=self._apply_mode)
+            return
         self._warm_voice()
         self._follow_translation()
         if self.player:
@@ -2061,7 +2034,7 @@ class Main(QMainWindow):
         key = self.player.current_key() if self.player else None
         key = key or self.resume_key or (self.page, -1)
         self.settings.setdefault(doc_id(self.book.source), {}).update(
-            {"key": list(key), "zoom": self.zoom, "translate": self.translate, "voice": self.voice})
+            {"key": list(key), "zoom": self.zoom, "fit": self.fit, "translate": self.translate, "voice": self.voice})
         if getattr(self.book, "lang_fixed", False):            # the language the reader chose for it
             self.settings[doc_id(self.book.source)]["lang"] = self.book.lang
         for r in self.settings.get("recents", []):
@@ -2136,13 +2109,13 @@ class Main(QMainWindow):
         tr_ok = True
         if page_ok and voice_ok and not getattr(self, "_ready_at", None):
             self._ready_at = time.time()
-        if self.translate and smart.best and smart.engine.available():
+        if self.translate and smart.engine.available() and smart.ai_reads(self.book.lang):
             st = smart.engine.status
             # never hold the reader more than 45 s for the AI: the fast translator covers until it's up
             tr_ok = st in ("gpu", "cpu", "failed") or (
                 self._ready_at is not None and time.time() - self._ready_at > 45)
             detail = tr({"gpu": "graphics card", "cpu": "processor", "failed": "fast mode"}.get(st, "starting"))
-            steps.append((tr("Starting the best translator"), "done" if tr_ok else "active", detail))
+            steps.append((tr("Starting the translator"), "done" if tr_ok else "active", detail))
             fraction += 0.2 if tr_ok else 0.05
         else:
             fraction += 0.2
@@ -2163,7 +2136,7 @@ class Main(QMainWindow):
                 self._start_at(self.resume_key or (self.page, -1))
             else:
                 self.player.set_paused(False)
-                self._set_follow(True)
+                self._set_follow(self.follow_wanted)
         else:
             self.player.set_paused(True)
             self._save_position()
@@ -2171,7 +2144,7 @@ class Main(QMainWindow):
     def _start_at(self, key):
         if self.player:
             self.resume_key = None
-            self._set_follow(True)
+            self._set_follow(self.follow_wanted)
             self.book.want(key[0])
             self.player.play_from(key)
 
@@ -2358,4 +2331,8 @@ def run(path=None):
             tr("Close"), parent=w).exec())
     elif not update.store_app():        # (the Microsoft Store updates its own copy)
         w.check_for_update()
+    # a Lithuanian voice downloaded while its stress dictionary was still part of the program
+    # (until 1.0.11): the update took the dictionary out, so it is fetched now, once
+    if any(s.startswith("lt_") for s in voices.installed()) and packs.lithuanian_items():
+        packs.Download(packs.lithuanian_items(), lambda done, total: None, lambda err: None).start()
     return app.exec()
